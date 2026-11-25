@@ -33,5 +33,70 @@
     "target": "worker",
     "url": "https://standby-display.kinotch.workers.dev/",
     "icon": "https://kinoko34077.github.io/standby-display/icon-192.png"
+  },
+  {
+    "repositoryId": "1423922402",
+    "key": "main",
+    "title": "Audio Time–Frequency Lab",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
+  },
+  {
+    "repositoryId": "1359681389",
+    "key": "main",
+    "title": "Lyric Reader / Writer",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
+  },
+  {
+    "repositoryId": "1248222302",
+    "key": "main",
+    "title": "5D Gomoku",
+    "kind": "application",
+    "target": "pages",
+    "path": "",
+    "icon": "favicon.svg"
+  },
+  {
+    "repositoryId": "1361347432",
+    "key": "main",
+    "title": "IDS Composit",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
+  },
+  {
+    "repositoryId": "1361347432",
+    "key": "consumer-demo",
+    "title": "IDS Consumer Demo",
+    "kind": "demo",
+    "target": "pages",
+    "path": "consumer.html"
+  },
+  {
+    "repositoryId": "1387228219",
+    "key": "main",
+    "title": "Repository Monitor",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
+  },
+  {
+    "repositoryId": "977020966",
+    "key": "main",
+    "title": "Weather Widget",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
+  },
+  {
+    "repositoryId": "1466990530",
+    "key": "main",
+    "title": "Gabor Pattern Puzzle",
+    "kind": "application",
+    "target": "pages",
+    "path": ""
   }
 ]

@@ -141,11 +141,15 @@ try:
         page.route('https://**/*',lambda route:route.fulfill(status=200,body='<h1>Mock external candidate</h1>',content_type='text/html'))
         data=catalog_fixture()
         now=data['generatedAt']
-        data['repositories'].append(dict(id='99',fullName='kinoko34077/new-app',visibility='public',archived=False,observedAt=now))
+        data['repositories'].append(dict(id='99',fullName='kinoko34077/new-app',visibility='public',archived=True,observedAt=now))
         data['applications'].append(dict(id='repo:99:main',repositoryId='99',title='New app',kind='application',canonicalUrl='https://kinoko34077.github.io/new-app/',publication=dict(basis='github-pages',observedAt=now)))
         mock_catalog(page,data)
         page.goto(base)
         fresh=page.locator('[data-app-id="repo:99:main"]')
+        expect(page.locator('#repo-summary')).to_have_text('公開リポジトリ (5)')
+        page.locator('#repo-summary').click()
+        expect(page.locator('#repo-list [data-repo-id="99"]')).to_have_attribute('href','https://github.com/kinoko34077/new-app')
+        page.locator('#repo-summary').click()
         fresh.click()
         assert not page.locator('#app-menu').is_visible()
         expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/new-app/')
@@ -168,6 +172,7 @@ try:
         page.reload()
         expect(page.locator('#apps button')).to_have_count(4)
         assert fresh.count()==0
+        expect(page.locator('#repo-list [data-repo-id="99"]')).to_have_count(0)
         # Stale catalog retains usable links; known removals do not return.
         page.unroute('**/catalog.json')
         expired=datetime.now(timezone.utc)-timedelta(days=4)
@@ -197,6 +202,7 @@ try:
         for item in real['applications']:
             if item['kind']!='documentation':
                 expect(page.locator('[data-app-id="'+item['id']+'"]')).to_have_count(1)
+        expect(page.locator('#repo-list a')).to_have_count(len(real['repositories']))
         # Client guards independently reject bad publication/visibility data.
         assert page.evaluate("""() => {
             const raw=JSON.parse(localStorage.getItem('kinotch-hub.catalog.v1'));
@@ -205,7 +211,7 @@ try:
         }""")
         ctx.close()
         browser.close()
-    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, manifest, offline shell')
+    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, public repository references, manifest, offline shell')
 finally:
     server.shutdown()
     server.server_close()
