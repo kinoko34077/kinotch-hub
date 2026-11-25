@@ -166,6 +166,25 @@ try:
         expect(page.locator('#catalog-status')).to_contain_text('取得できません')
         expect(page.locator('#apps button')).to_have_count(1)
         ctx.close()
+        # Real generated artifact (not the fixture) must be admitted by the
+        # actual launcher. Mock only off-origin images, never catalog.json.
+        ctx=browser.new_context()
+        page=ctx.new_page()
+        page.route('https://**/*',lambda route:route.abort())
+        real=json.loads((ROOT/'preview/catalog.json').read_text(encoding='utf-8'))
+        page.goto(base)
+        expect(page.locator('#catalog-status')).to_contain_text('更新 ')
+        expect(page.locator('#apps button')).to_have_count(1+sum(a['kind']!='documentation' for a in real['applications']))
+        for item in real['applications']:
+            if item['kind']!='documentation':
+                expect(page.locator('[data-app-id="'+item['id']+'"]')).to_have_count(1)
+        # Client guards independently reject bad publication/visibility data.
+        assert page.evaluate("""() => {
+            const raw=JSON.parse(localStorage.getItem('kinotch-hub.catalog.v1'));
+            const bad=structuredClone(raw);bad.repositories[0].visibility='private';
+            try{CatalogRuntime.admit(bad);return false}catch{return true}
+        }""")
+        ctx.close()
         browser.close()
     print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, allowlisted routing (mocked), manifest, offline shell')
 finally:

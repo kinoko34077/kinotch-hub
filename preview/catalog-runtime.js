@@ -47,16 +47,17 @@ const CatalogRuntime=(()=>{
     try{const raw=localStorage.getItem(key);return raw?admit(JSON.parse(raw)):null;}catch{return null;}
   }
   async function read(){
-    const old=cached();
+    const old=cached(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
     try{
-      const response=await fetch('catalog.json',{cache:'no-store',signal:AbortSignal.timeout(8000)});
+      const response=await fetch('catalog.json',{cache:'no-store',signal:controller.signal});
       if(!response.ok)throw Error('unavailable');
       const raw=await response.text();if(raw.length>2000000)throw Error('oversized');
       const current=admit(JSON.parse(raw));
       if(old&&old.generated>current.generated)return {...old,source:'cached'};
       try{localStorage.setItem(key,JSON.stringify(current.data));}catch{}
       return {...current,source:'network'};
-    }catch{return old?{...old,source:'cached'}:null;}
+    }catch{return old&&Date.now()<old.expires?{...old,source:'cached'}:null;}
+    finally{clearTimeout(timer);}
   }
   return Object.freeze({fixture,admit,read,key});
 })();

@@ -81,9 +81,9 @@ async function refreshCatalog(){
   if(refreshing)return;refreshing=true;lastRefresh=Date.now();
   try{
     const next=await CatalogRuntime.read();
-    if(!next){expireCatalog();if(!snapshot)catalogStatus.textContent='公開カタログを取得できません';return;}
+    if(!next){expireCatalog();catalogStatus.textContent=snapshot?'取得失敗 · 有効な一覧を保持 · 更新 '+new Date(snapshot.generated).toLocaleString('ja-JP'):'公開カタログを取得できません';return;}
     if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[CatalogRuntime.fixture,...next.items];renderApps();}
-    const active=snapshot;const age=Date.now()-active.generated;
+    const active=snapshot;const age=Date.now()-active.generated;if(Date.now()>=active.expires){expireCatalog();return;}
     catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
     clearTimeout(expiryTimer);expiryTimer=setTimeout(expireCatalog,Math.max(0,active.expires-Date.now()));
   }finally{refreshing=false;}
