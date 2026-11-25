@@ -60,7 +60,24 @@ EXTERNAL_URLS = load_external_urls()
 
 def render_network_assets(runtime, html, urls=EXTERNAL_URLS):
     literal = json.dumps(list(urls), separators=(',', ':'))
-    runtime, n = re.subn(r'(?m)^  const EXTERNAL_URLS=Object\.freeze\(.*\); // generated: publication-network
+    runtime, n = re.subn(r'(?m)^  const EXTERNAL_URLS=Object\.freeze\(.*\); // generated: publication-network$',
+                         lambda _: '  const EXTERNAL_URLS=Object.freeze(' + literal + '); // generated: publication-network', runtime)
+    origins = sorted({url.rstrip('/') for url in urls})
+    directive = "frame-src 'self' " + PAGES + (' ' + ' '.join(origins) if origins else '')
+    html, m = re.subn(r"frame-src [^;]+(?=;)", lambda _: directive, html)
+    if n != 1 or m != 1:
+        raise CatalogError('INVALID_NETWORK_ASSET_TEMPLATE')
+    return runtime, html
+
+
+def sync_network_assets():
+    runtime, html = ROOT / 'preview/catalog-runtime.js', ROOT / 'preview/index.html'
+    first, second = render_network_assets(runtime.read_text(encoding='utf-8'), html.read_text(encoding='utf-8'))
+    runtime.write_text(first, encoding='utf-8')
+    html.write_text(second, encoding='utf-8')
+
+
+class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
