@@ -114,14 +114,14 @@ def normalize_repositories(rows, observed):
     return sorted(result, key=lambda item: item[0]['fullName'].casefold())
 
 
-def safe_url(value, base):
+def safe_url(value, base, relative_to=None):
     """Restrict network and output URLs to the exact approved origin/path prefix.
     No query, fragment, credentials, escaped path, or redirect traversal.
     """
     if not isinstance(value, str) or not value or len(value) > 1024 or re.search(r'[\s\\%]', value):
         return None
     try:
-        target = urljoin(base, value)
+        target = urljoin(relative_to or base, value)
         p, b = urlsplit(target), urlsplit(base)
         if (p.scheme != 'https' or p.netloc != b.netloc or p.query or p.fragment
                 or not SAFE_PATH.fullmatch(p.path) or '//' in p.path
@@ -165,6 +165,14 @@ def title_text(value):
             and not any(ord(c) < 32 for c in value) else None)
 
 
+def icon_available(url, get):
+    # Optional artwork failures must not invalidate otherwise confirmed apps.
+    try:
+        return get(url, 'image') is not None
+    except CatalogError:
+        return False
+
+
 def manifest_app(base, html, get):
     parser = ManifestLink()
     try:
@@ -187,7 +195,7 @@ def manifest_app(base, html, get):
     # Resolve manifest-relative references, then recheck the original project scope.
     if not title or not isinstance(manifest.get('start_url'), str):
         return None
-    start = safe_url(urljoin(link, manifest['start_url']), base)
+    start = safe_url(manifest['start_url'], base, relative_to=link)
     if start is None:
         return None
     app = {'title': title, 'canonicalUrl': base, 'kind': 'application'}
@@ -196,8 +204,8 @@ def manifest_app(base, html, get):
         for icon in icons[:8]:
             if not isinstance(icon, dict) or not isinstance(icon.get('src'), str):
                 continue
-            url = safe_url(urljoin(link, icon['src']), base)
-            if url and get(url, 'image') is not None:
+            url = safe_url(icon['src'], base, relative_to=link)
+            if url and icon_available(url, get):
                 app['iconUrl'] = url
                 break
     return app
@@ -224,7 +232,7 @@ def curated_app(definition, base, has_pages, get):
         icon = safe_url(icon, base)
         if icon is None:
             raise CatalogError('INVALID_CURATED_ICON')
-        if get(icon, 'image') is not None:
+        if icon_available(icon, get):
             app['iconUrl'] = icon
     return app
 

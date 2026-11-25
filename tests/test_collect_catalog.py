@@ -75,6 +75,20 @@ class CatalogTests(unittest.TestCase):
         app=data['applications'][0]
         self.assertEqual(app['canonicalUrl'],c.WORKER+'/')
         self.assertNotIn('iconUrl',app)
+    def test_optional_icon_failure_and_malformed_manifest_urls_are_local(self):
+        base=c.PAGES+'/example/'
+        def get(url,kind):
+            if kind=='html':return b'<link rel="manifest" href="manifest.json">'
+            if kind=='manifest':return json.dumps({'name':'App','start_url':'./','display':'standalone','icons':[{'src':'https://['},{'src':'icon.svg'}]}).encode()
+            if kind=='image':raise c.CatalogError('UPSTREAM_HTTP_FAILURE')
+        data=c.collect([],one_page([repo()]),get,NOW)
+        self.assertEqual(len(data['applications']),1)
+        self.assertNotIn('iconUrl',data['applications'][0])
+        def malformed(url,kind):
+            if kind=='html':return b'<link rel="manifest" href="manifest.json">'
+            if kind=='manifest':return json.dumps({'name':'App','start_url':'https://[','display':'standalone'}).encode()
+            raise AssertionError('unexpected request')
+        self.assertEqual(c.collect([],one_page([repo()]),malformed,NOW)['applications'],[])
     def test_semantic_validation_and_atomic_write(self):
         base=c.PAGES+'/example/'
         valid=c.collect([],one_page([repo()]),app_get(base),NOW)
