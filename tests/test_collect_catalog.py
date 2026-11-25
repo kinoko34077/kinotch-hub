@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from devflow_mapped_read import MappedReadError
 from tools import collect_catalog as c
 
@@ -130,6 +131,34 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(byid['repo:1:main']['publication']['observedAt'],new['generatedAt'])
         new=c.collect(defs[:1],one_page([repo()]),partial,NOW+c.timedelta(days=1),previous=old)
         self.assertEqual([a['id'] for a in new['applications']],['repo:1:main'])
+    def test_list_failure_preserves_exact_old_snapshot_and_rejects_private(self):
+        old=c.collect([],one_page([repo()]),app_get(c.PAGES+'/example/'),NOW)
+        def unavailable(path):
+            raise c.ProbeUnavailable('UPSTREAM_HTTP_403')
+        data,fallback=c.collect_with_recovery([],old,True,unavailable,lambda *_:None,NOW+c.timedelta(days=5))
+        self.assertTrue(fallback)
+        self.assertEqual(data,old)
+        with self.assertRaises(c.ProbeUnavailable):
+            c.collect_with_recovery([],old,False,unavailable)
+        with self.assertRaises(c.ProbeUnavailable):
+            c.collect_with_recovery([],None,True,unavailable)
+        with self.assertRaises(c.CatalogError):
+            c.collect_with_recovery([],old,True,one_page([dict(repo(),private=True)]))
+    def test_api_auth_only_for_fixed_public_list(self):
+        with patch.dict(c.os.environ,{'GITHUB_TOKEN':'fixture-token'}):
+            with patch.object(c,'build_opener') as builder:
+                opener=builder.return_value
+                response=opener.open.return_value.__enter__.return_value
+                response.status=200
+                response.read.return_value=b'[]'
+                response.headers.get_content_type.return_value='application/json'
+                response.headers.get.return_value=''
+                c.get_api_page(c.repository_path(1))
+                self.assertEqual(opener.open.call_args.args[0].get_header('Authorization'),'Bearer fixture-token')
+                c.request(c.PAGES+'/kinotch-hub/catalog.json','application/json')
+                self.assertIsNone(opener.open.call_args.args[0].get_header('Authorization'))
+                with self.assertRaises(c.CatalogError):
+                    c.request('https://example.com/','application/json',api_auth=True)
     def test_semantic_validation_and_atomic_write(self):
         base=c.PAGES+'/example/'
         valid=c.collect([],one_page([repo()]),app_get(base),NOW)

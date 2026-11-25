@@ -44,12 +44,18 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def request(url, accept, *, missing_codes=(404, 410)):
+def request(url, accept, *, missing_codes=(404, 410), api_auth=False):
     # Only callers with fixed API paths or validated publication URLs enter.
+    headers = {'User-Agent': 'kinotch-hub-public-catalog', 'Accept': accept}
+    if api_auth:
+        if not re.fullmatch(re.escape(API) + r'/users/kinoko34077/repos\?[A-Za-z0-9=&_-]+', url):
+            raise CatalogError('INVALID_AUTH_DESTINATION')
+        token = os.environ.get('GITHUB_TOKEN')
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
     try:
         with build_opener(NoRedirect()).open(
-            Request(url, headers={'User-Agent': 'kinotch-hub-public-catalog',
-                                  'Accept': accept}), timeout=12
+            Request(url, headers=headers), timeout=12
         ) as response:
             if response.status != 200:
                 raise ProbeUnavailable('UNEXPECTED_HTTP_STATUS')
@@ -62,7 +68,7 @@ def request(url, accept, *, missing_codes=(404, 410)):
             error.close()
             return None
         error.close()
-        raise ProbeUnavailable('UPSTREAM_HTTP_FAILURE') from None
+        raise ProbeUnavailable('UPSTREAM_HTTP_' + str(error.code)) from None
     except (URLError, TimeoutError, OSError):
         raise ProbeUnavailable('UPSTREAM_TRANSPORT_FAILURE') from None
 
@@ -70,7 +76,7 @@ def request(url, accept, *, missing_codes=(404, 410)):
 def get_api_page(path):
     if not re.fullmatch(r'/users/kinoko34077/repos\?[A-Za-z0-9=&_-]+', path):
         raise CatalogError('INVALID_API_PATH')
-    result = request(API + path, 'application/vnd.github+json')
+    result = request(API + path, 'application/vnd.github+json', api_auth=True)
     if result is None:
         raise CatalogError('PUBLIC_LIST_UNAVAILABLE')
     body, _, link = result
@@ -405,19 +411,35 @@ def read_previous():
     return previous
 
 
+def collect_with_recovery(definitions, previous, allow_last_good, get_page=get_api_page, get=probe, now=None):
+    try:
+        return collect(definitions, get_page, get, now, previous), False
+    except (ProbeUnavailable, MappedReadError):
+        # Network/pagination failure is not an empty public list. Do not
+        # fallback on integrity or explicit non-public repository errors.
+        if not allow_last_good or previous is None:
+            raise
+        validate_snapshot(previous)
+        return previous, True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--allow-last-good', action='store_true')
     args = parser.parse_args()
     try:
         definitions = json.loads((ROOT / 'catalog/public-apps.json').read_text(encoding='utf-8'))
-        data = collect(definitions, previous=read_previous())
+        previous = read_previous()
+        data, fallback = collect_with_recovery(definitions, previous, args.allow_last_good)
         write_atomic(args.output, data)
     except CatalogError as error:
         parser.exit(1, 'Public catalog collection incomplete or invalid (' + str(error) + '); no new snapshot written.\n')
     except MappedReadError:
         parser.exit(1, 'Public catalog pagination incomplete; no new snapshot written.\n')
-    print('Public catalog validated: repositories=' + str(len(data['repositories'])) +
+    if fallback:
+        print('WARNING: public list unavailable; using unchanged last-good snapshot (not a new observation).')
+    print(('Last-good catalog validated: repositories=' if fallback else 'Public catalog validated: repositories=') + str(len(data['repositories'])) +
           ' applications=' + str(len(data['applications'])))
 
 
