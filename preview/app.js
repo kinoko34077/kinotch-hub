@@ -81,13 +81,27 @@ for(const app of apps){
   document.querySelector('#apps').append(button);
 }}
 const catalogStatus=document.querySelector('#catalog-status');
+function renderRepositories(data){
+  const panel=document.querySelector('#repo-panel'),list=document.querySelector('#repo-list'),label=document.querySelector('#repo-summary');
+  const rows=[...data.repositories].sort((a,b)=>a.fullName.localeCompare(b.fullName,'ja'));
+  const focused=document.activeElement?.dataset?.repoId;
+  const fragment=document.createDocumentFragment();
+  for(const repo of rows){
+    const li=document.createElement('li'),link=document.createElement('a');
+    link.dataset.repoId=repo.id;link.href='https://github.com/'+repo.fullName;
+    link.target='_blank';link.rel='noopener noreferrer';link.textContent=repo.fullName.split('/')[1];
+    li.append(link);fragment.append(li);
+  }
+  list.replaceChildren(fragment);label.textContent='公開リポジトリ ('+rows.length+')';panel.hidden=false;
+  if(focused)[...list.querySelectorAll('a')].find(a=>a.dataset.repoId===focused)?.focus();
+}
 async function refreshCatalog(){
   if(refreshing)return;refreshing=true;lastRefresh=Date.now();
   try{
     const next=await CatalogRuntime.read();
     if(!next){catalogStatus.textContent=snapshot?'取得失敗 · 保存済み一覧 · 更新 '+new Date(snapshot.generated).toLocaleString('ja-JP'):'公開カタログを取得できません';document.querySelector('#catalog-retry').hidden=false;return;}
     document.querySelector('#catalog-retry').hidden=next.source!=='cached';
-    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[...initialApps(),...next.items];renderApps();}
+    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[...initialApps(),...next.items];renderApps();renderRepositories(next.data);}
     const active=snapshot;const age=Date.now()-active.generated;
     catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':'')+(Date.now()>=active.expires||age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
     if(activeApp&&!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url)){external.hidden=true;retry.hidden=true;}

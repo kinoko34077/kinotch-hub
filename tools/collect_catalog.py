@@ -158,16 +158,23 @@ def probe(url, kind):
     return body
 
 
-class ManifestLink(HTMLParser):
+class PublicationMetadata(HTMLParser):
     def __init__(self):
         super().__init__()
         self.href = None
+        self.app_name = None
+        self.icons = []
 
     def handle_starttag(self, tag, attrs):
-        if tag == 'link' and self.href is None:
-            a = dict(attrs)
-            if 'manifest' in (a.get('rel') or '').lower().split():
+        a = dict(attrs)
+        if tag == 'meta' and (a.get('name') or '').lower() == 'application-name' and self.app_name is None:
+            self.app_name = a.get('content')
+        if tag == 'link':
+            rel = (a.get('rel') or '').lower().split()
+            if 'manifest' in rel and self.href is None:
                 self.href = a.get('href')
+            if ('icon' in rel or 'apple-touch-icon' in rel) and a.get('href') and len(self.icons) < 8:
+                self.icons.append(a['href'])
 
 
 def title_text(value):
@@ -183,33 +190,49 @@ def icon_available(url, get):
         return False
 
 
-def manifest_app(base, html, get):
-    parser = ManifestLink()
+def html_metadata(html):
+    parser = PublicationMetadata()
     try:
         parser.feed(html.decode('utf-8', errors='replace'))
     except ValueError:
-        return None
-    link = safe_url(parser.href, base)
-    if not link:
-        return None
-    raw = get(link, 'manifest')
-    if raw is None:
-        return None
-    try:
-        manifest = json.loads(raw)
-    except (ValueError, UnicodeError):
-        return None
-    if not isinstance(manifest, dict) or manifest.get('display') not in ('standalone', 'fullscreen', 'minimal-ui'):
-        return None
-    title = title_text(manifest.get('short_name')) or title_text(manifest.get('name'))
-    # Resolve manifest-relative references, then recheck the original project scope.
-    if not title or not isinstance(manifest.get('start_url'), str):
-        return None
-    start = safe_url(manifest['start_url'], base, relative_to=link)
-    if start is None:
+        return PublicationMetadata()
+    return parser
+
+
+def html_icon(base, metadata, get, page_url=None):
+    for ref in metadata.icons:
+        url = safe_url(ref, base, relative_to=page_url)
+        if url and icon_available(url, get):
+            return url
+    return None
+
+
+def manifest_app(base, html, get):
+    """Positive publication metadata; installability/display mode is not an app condition."""
+    metadata = html_metadata(html)
+    link = safe_url(metadata.href, base)
+    title = title_text(metadata.app_name)
+    icons = []
+    if link:
+        try:
+            raw = get(link, 'manifest')
+        except ProbeUnavailable:
+            if not title:
+                raise
+            raw = None
+        try:
+            manifest = json.loads(raw) if raw is not None else None
+        except (ValueError, UnicodeError):
+            manifest = None
+        if isinstance(manifest, dict):
+            manifest_title = title_text(manifest.get('short_name')) or title_text(manifest.get('name'))
+            start = safe_url(manifest.get('start_url'), base, relative_to=link)
+            if manifest_title and start:
+                title = manifest_title
+                icons = manifest.get('icons', [])
+    if not title:
         return None
     app = {'title': title, 'canonicalUrl': base, 'kind': 'application'}
-    icons = manifest.get('icons', [])
     if isinstance(icons, list):
         for icon in icons[:8]:
             if not isinstance(icon, dict) or not isinstance(icon.get('src'), str):
@@ -218,6 +241,10 @@ def manifest_app(base, html, get):
             if url and icon_available(url, get):
                 app['iconUrl'] = url
                 break
+    if 'iconUrl' not in app:
+        icon = html_icon(base, metadata, get)
+        if icon:
+            app['iconUrl'] = icon
     return app
 
 
@@ -240,7 +267,8 @@ def curated_app(definition, base, url, get):
     title, kind = title_text(definition.get('title')), definition.get('kind')
     if not url or not title or kind not in ('application', 'demo', 'preview', 'documentation'):
         raise CatalogError('INVALID_CURATED_APP')
-    if get(url, 'html') is None:
+    html = get(url, 'html')
+    if html is None:
         return None
     app = {'title': title, 'canonicalUrl': url, 'kind': kind}
     icon = definition.get('icon')
@@ -249,6 +277,10 @@ def curated_app(definition, base, url, get):
         if icon is None:
             raise CatalogError('INVALID_CURATED_ICON')
         if icon_available(icon, get):
+            app['iconUrl'] = icon
+    if 'iconUrl' not in app:
+        icon = html_icon(base, html_metadata(html), get, page_url=url)
+        if icon:
             app['iconUrl'] = icon
     return app
 
@@ -285,7 +317,7 @@ def discover(repos, definitions, observed, get, previous=None):
     apps = []
     for repo, has_pages in repos:
         name = repo['fullName'].split('/')[1]
-        if repo['archived'] or name.casefold() == 'kinotch-hub':
+        if name.casefold() == 'kinotch-hub':
             continue
         base = PAGES + '/' + name + '/'
         entries = by_id.get(repo['id'], [])
@@ -342,7 +374,7 @@ def validate_snapshot(data):
             raise CatalogError('FUTURE_OBSERVATION')
     for app in data['applications']:
         repo = repos.get(app['repositoryId'])
-        if (repo is None or repo['archived'] or not app['id'].startswith('repo:' + repo['id'] + ':')
+        if (repo is None or not app['id'].startswith('repo:' + repo['id'] + ':')
                 or repo['fullName'].casefold() == OWNER + '/kinotch-hub'):
             raise CatalogError('INVALID_APP_REFERENCE')
         base = PAGES + '/' + repo['fullName'].split('/')[1] + '/'
