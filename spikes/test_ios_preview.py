@@ -4,7 +4,7 @@ import http.server
 import json
 import pathlib
 import threading
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
 server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
@@ -24,7 +24,7 @@ try:
             page.locator('[data-app-id=tarot] img').wait_for(state='visible')
             assert page.locator('[data-app-id=tarot] img').evaluate('img=>img.naturalWidth')==32
             assert not page.locator('[data-app-id=tarot] .glyph').is_visible()
-            page.wait_for_function("document.querySelector('[data-app-id=clock] img').complete")
+            expect(page.locator('[data-app-id=clock] img')).to_have_js_property('complete', True)
             assert page.locator('[data-app-id=clock] .glyph').is_visible()
             assert not page.locator('[data-app-id=clock] img').is_visible()
             if viewport['width']==390:
@@ -36,16 +36,16 @@ try:
             assert page.locator('iframe').count()==0
             page.evaluate("Object.defineProperty(navigator,'share',{configurable:true,value:async data=>{window.shared=data}})")
             page.locator('#menu-share').click()
-            page.wait_for_function("window.shared && !document.querySelector('#app-menu').open")
-            assert page.evaluate("window.shared.url")=='https://kinoko34077.github.io/tarot-draw/'
+            page.locator('#app-menu').wait_for(state='hidden')
+            assert page.evaluate("() => window.shared.url")=='https://kinoko34077.github.io/tarot-draw/'
             tile.focus()
             page.keyboard.press('Shift+F10')
             assert page.locator('#app-menu').is_visible()
             page.evaluate("""Object.defineProperty(navigator,'share',{configurable:true,value:undefined});
               Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async url=>{window.copied=url}}})""")
             page.locator('#menu-share').click()
-            page.wait_for_function("window.copied && !document.querySelector('#app-menu').open")
-            assert page.evaluate("window.copied")=='https://kinoko34077.github.io/tarot-draw/'
+            page.locator('#app-menu').wait_for(state='hidden')
+            assert page.evaluate("() => window.copied")=='https://kinoko34077.github.io/tarot-draw/'
             tile.click(button='right')
             page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('denied')}}})")
             page.locator('#menu-share').click()
