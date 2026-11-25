@@ -230,7 +230,7 @@ def privacy_preserving_chromium(p, browser, executable):
     # existing synthetic loopback servers. No proxy, TLS or origin bypass.
     replacements.append('--host-resolver-rules=MAP hub.r0-a.test 127.0.0.1, MAP app.r0-a.test 127.0.0.1, MAP app.r0-b.test 127.0.0.1')
     private = p.chromium.launch(executable_path=executable,
-                                ignore_default_args=ignored,args=replacements)
+                                ignore_default_args=ignored,args=['--enable-automation', *replacements])
     session = private.new_browser_cdp_session()
     try:
         effective = session.send('Browser.getBrowserCommandLine')['arguments']
@@ -252,7 +252,7 @@ def main():
     try:
         with sync_playwright() as p:
             executable = os.environ.get('CHROMIUM_EXECUTABLE')
-            browser = p.chromium.launch(executable_path=executable)
+            browser = p.chromium.launch(executable_path=executable, args=['--enable-automation'])
             print('Chromium:', browser.version)
             for viewport in ({'width':390,'height':844}, {'width':844,'height':390}):
                 page = browser.new_page(viewport=viewport)
