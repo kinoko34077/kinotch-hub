@@ -152,6 +152,10 @@ try:
         expect(page.locator('#back')).to_be_visible()
         # No iframe replacement when changing the dock.
         page.frame_locator('iframe').locator('#draft').fill('keep')
+        swipe(35,0)
+        expect(page.locator('#back')).to_be_hidden()
+        handle.tap()
+        expect(page.locator('#back')).to_be_visible()
         handle.tap()
         expect(page.locator('#back')).to_be_hidden()
         y0=handle.bounding_box()['y']

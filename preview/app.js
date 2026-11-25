@@ -12,7 +12,7 @@ function eligible(app){return !!currentApp(app);}
 const dock=document.querySelector('#home-dock'),handle=document.querySelector('#home-handle');
 let dockGesture=null,skipHandleClick=false;
 function expandHome(expanded){
-  back.hidden=!expanded;handle.setAttribute('aria-expanded',String(expanded));
+  dock.dataset.expanded=String(expanded);back.hidden=!expanded;handle.setAttribute('aria-expanded',String(expanded));
   handle.setAttribute('aria-label',expanded?'ホーム操作を折り畳む':'ホーム操作を展開');
   handle.textContent=dock.dataset.side==='left'?(expanded?'‹':'›'):(expanded?'›':'‹');
   if(!expanded&&document.activeElement===back)handle.focus({preventScroll:true});
