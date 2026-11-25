@@ -96,11 +96,32 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual({x['id'] for x in a['applications']},{'repo:1:main','repo:1:demo'})
         self.assertEqual(c.collect(defs,one_page([]),lambda *_:b'html',NOW)['applications'],[])
         self.assertEqual(c.collect(defs,one_page([repo(pages=False)]),lambda *_:b'html',NOW)['applications'],[])
+    def test_network_assets_match_single_authority(self):
+        runtime=(c.ROOT/'preview/catalog-runtime.js').read_text(encoding='utf-8')
+        html=(c.ROOT/'preview/index.html').read_text(encoding='utf-8')
+        self.assertEqual(c.render_network_assets(runtime,html),(runtime,html))
+        first,second=c.render_network_assets(runtime,html,('https://another.example/',))
+        self.assertIn('["https://another.example/"]',first)
+        self.assertIn("frame-src 'self' "+c.PAGES+" https://another.example;",second)
+        self.assertNotIn(c.EXTERNAL_URLS[0],first)
+        self.assertNotIn(c.EXTERNAL_URLS[0].rstrip('/'),second)
+    def test_external_definition_rejects_unapproved_network_destination(self):
+        entry={'repositoryId':'1','key':'main','title':'External','kind':'application','target':'external','url':'https://unknown.example/'}
+        calls=[]
+        with self.assertRaisesRegex(c.CatalogError,'INVALID_CURATED_TARGET'):
+            c.collect([entry],one_page([repo(pages=False)]),lambda *a:calls.append(a),NOW)
+        self.assertEqual(calls,[])
+        entry['url']=c.EXTERNAL_URLS[0]
+        data=c.collect([entry],one_page([repo(pages=False)]),lambda *_:b'<html/>',NOW)
+        self.assertEqual(data['applications'][0]['canonicalUrl'],entry['url'])
+        self.assertEqual(data['applications'][0]['publication']['basis'],'public-deployment')
+        data['applications'][0]['publication']['basis']='github-pages'
+        with self.assertRaisesRegex(c.CatalogError,'UNAPPROVED_URL'):c.validate_snapshot(data)
     def test_external_worker_and_icon_fallback(self):
-        entry={'repositoryId':'969335914','key':'main','title':'Clock','kind':'application','target':'worker','url':c.WORKER+'/','icon':c.PAGES+'/standby-display/icon-192.png'}
+        entry={'repositoryId':'969335914','key':'main','title':'Clock','kind':'application','target':'external','url':c.EXTERNAL_URLS[0],'icon':c.PAGES+'/standby-display/icon-192.png'}
         data=c.collect([entry],one_page([repo(969335914,'standby-display',False)]),lambda url,kind:b'html' if kind=='html' else None,NOW)
         app=data['applications'][0]
-        self.assertEqual(app['canonicalUrl'],c.WORKER+'/')
+        self.assertEqual(app['canonicalUrl'],c.EXTERNAL_URLS[0])
         self.assertNotIn('iconUrl',app)
     def test_optional_icon_failure_and_malformed_manifest_urls_are_local(self):
         base=c.PAGES+'/example/'

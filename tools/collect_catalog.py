@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OWNER = 'kinoko34077'
 API = 'https://api.github.com'
 PAGES = 'https://kinoko34077.github.io'
-WORKER = 'https://standby-display.kinotch.workers.dev'
+NETWORK_FILE = ROOT / 'catalog/publication-network.json'
 PER_PAGE = 100
 MAX_PAGES = 10
 MAX_BODY = 2 * 1024 * 1024
@@ -37,6 +37,44 @@ class CatalogError(ValueError):
 
 class ProbeUnavailable(CatalogError):
     """Transient network/HTTP failure, distinct from invalid local definitions."""
+
+
+def load_external_urls(path=NETWORK_FILE):
+    """Deployment configuration, not discovered URLs or launch permissions."""
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(data, dict) or set(data) != {'externalUrls'} or not isinstance(data['externalUrls'], list):
+        raise CatalogError('INVALID_PUBLICATION_NETWORK')
+    urls = data['externalUrls']
+    # New destinations need separate safety and ownership review.
+    if any(not isinstance(url, str) or not re.fullmatch(
+            r'https://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*/', url)
+            for url in urls) or len(set(urls)) != len(urls):
+        raise CatalogError('INVALID_PUBLICATION_NETWORK')
+    if any(urlsplit(url).hostname == urlsplit(PAGES).hostname for url in urls):
+        raise CatalogError('INVALID_PUBLICATION_NETWORK')
+    return tuple(sorted(urls))
+
+
+EXTERNAL_URLS = load_external_urls()
+
+
+def render_network_assets(runtime, html, urls=EXTERNAL_URLS):
+    literal = json.dumps(list(urls), separators=(',', ':'))
+    runtime, n = re.subn(r'(?m)^  const EXTERNAL_URLS=Object\.freeze\(.*\); // generated: publication-network$',
+                         lambda _: '  const EXTERNAL_URLS=Object.freeze(' + literal + '); // generated: publication-network', runtime)
+    origins = sorted({url.rstrip('/') for url in urls})
+    directive = "frame-src 'self' " + PAGES + (' ' + ' '.join(origins) if origins else '')
+    html, m = re.subn(r"frame-src [^;]+(?=;)", lambda _: directive, html)
+    if n != 1 or m != 1:
+        raise CatalogError('INVALID_NETWORK_ASSET_TEMPLATE')
+    return runtime, html
+
+
+def sync_network_assets():
+    runtime, html = ROOT / 'preview/catalog-runtime.js', ROOT / 'preview/index.html'
+    first, second = render_network_assets(runtime.read_text(encoding='utf-8'), html.read_text(encoding='utf-8'))
+    runtime.write_text(first, encoding='utf-8')
+    html.write_text(second, encoding='utf-8')
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -254,8 +292,8 @@ def curated_url(definition, base, has_pages):
         if not has_pages:
             return None
         url = safe_url(definition.get('path') or base, base)
-    elif target == 'worker' and definition.get('url') == WORKER + '/':
-        url = WORKER + '/'
+    elif target == 'external' and definition.get('url') in EXTERNAL_URLS:
+        url = definition['url']
     else:
         raise CatalogError('INVALID_CURATED_TARGET')
     if not url:
@@ -379,7 +417,8 @@ def validate_snapshot(data):
             raise CatalogError('INVALID_APP_REFERENCE')
         base = PAGES + '/' + repo['fullName'].split('/')[1] + '/'
         url = app['canonicalUrl']
-        if safe_url(url, base) != url and not (url == WORKER + '/' and repo['id'] == '969335914'):
+        basis = app['publication']['basis']
+        if not ((basis == 'github-pages' and safe_url(url, base) == url) or (basis == 'public-deployment' and url in EXTERNAL_URLS)):
             raise CatalogError('UNAPPROVED_URL')
         if app.get('iconUrl') and safe_url(app['iconUrl'], base) != app['iconUrl']:
             raise CatalogError('UNAPPROVED_ICON')
@@ -457,9 +496,15 @@ def collect_with_recovery(definitions, previous, allow_last_good, get_page=get_a
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--sync-network-assets', action='store_true')
     parser.add_argument('--allow-last-good', action='store_true')
     args = parser.parse_args()
+    if args.sync_network_assets:
+        sync_network_assets()
+        return
+    if args.output is None:
+        parser.error('--output is required unless --sync-network-assets is used')
     try:
         definitions = json.loads((ROOT / 'catalog/public-apps.json').read_text(encoding='utf-8'))
         previous = read_previous()

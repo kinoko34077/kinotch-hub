@@ -30,7 +30,7 @@
     "key": "main",
     "title": "Standby Display",
     "kind": "application",
-    "target": "worker",
+    "target": "external",
     "url": "https://standby-display.kinotch.workers.dev/",
     "icon": "https://kinoko34077.github.io/standby-display/icon-192.png"
   },
