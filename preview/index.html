@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src 'self' https://kinoko34077.github.io https://standby-display.kinotch.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg"><link rel="stylesheet" href="style.css">
+<title>KiNoTch. Hub — 試用版</title></head>
+<body><main id="home">
+<header><h1>KiNoTch. Hub</h1><span class="tag">実機検証版</span></header>
+<p>公開アプリをHubの中で開く試用版。互換性はまだ検証中です。</p>
+<p id="mode" role="status"></p>
+<div id="apps" class="apps"></div>
+<details><summary>iPhoneでの試し方</summary><p>Safariの共有メニューから「ホーム画面に追加」。ホーム画面から起動してアプリを選択してください。右下のホームボタンで戻ります。URLバー、入力、音声、保存などの動作を確認できます。</p></details>
+<p class="note">試用版は安全側の隔離設定を使用します。保存や一部のアプリ機能が動かない場合があります。任意URLの埋込は行いません。</p>
+</main><section id="stage" hidden aria-label="起動中のアプリ"><div id="surface"></div><button id="back" type="button" aria-label="Hubへ戻る" title="Hubへ戻る">⌂</button></section>
+<script src="app.js" defer></script></body></html>
