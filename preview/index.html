@@ -5,14 +5,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://kinoko34077.github.io; frame-src 'self' https://kinoko34077.github.io https://standby-display.kinotch.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg"><link rel="stylesheet" href="style.css">
-<title>KiNoTch. Hub — 試用版</title></head>
+<title>KiNoTch. Hub</title></head>
 <body><main id="home">
-<header><div><h1>KiNoTch<span class="dot">.</span> Hub</h1><p id="mode" role="status"></p></div><span class="tag">PREVIEW</span></header>
+<header><div><h1>KiNoTch<span class="dot">.</span> Hub</h1></div></header>
 <div id="apps" class="apps" aria-label="アプリ一覧"></div>
 <p id="catalog-status" class="hint" role="status">公開カタログ取得中</p>
-<p id="gesture-hint" class="hint">タップで開く · 長押し / 右クリックでメニュー</p>
+<button id="catalog-retry" type="button" hidden>再取得</button>
+<p id="gesture-hint" class="hint" hidden>タップで開く · 長押し / 右クリックでメニュー</p>
 <p id="feedback" role="status" aria-live="polite"></p>
-<details><summary>使い方・試用版について</summary><p>Safariの共有メニューから「ホーム画面に追加」。ホーム画面から起動し、アプリを選択してください。右下のホームボタンで戻ります。キーボードではShift+F10でもメニューを開けます。</p><p>公開アプリ候補の互換性は検証中です。隔離設定により保存などが動かない場合があります。</p></details>
+<details><summary>使い方</summary><p>Safariの共有メニューから「ホーム画面に追加」。ホーム画面から起動し、アプリを選択してください。右下のホームボタンで戻ります。キーボードではShift+F10でもメニューを開けます。</p><p>Hub内で動作しない場合は起動画面からブラウザで開けます。</p></details>
 </main>
 <dialog id="app-menu" aria-labelledby="menu-title"><div class="menu-inner">
 <h2 id="menu-title"></h2><p id="menu-note"></p>
@@ -22,6 +23,6 @@
 <div id="manual-share" hidden><label for="share-url">リンクをコピー</label><input id="share-url" readonly></div>
 <button id="menu-cancel" type="button">キャンセル</button>
 </div></dialog>
-<section id="stage" hidden aria-label="起動中のアプリ"><div id="surface"></div><button id="back" type="button" aria-label="Hubへ戻る" title="Hubへ戻る">⌂</button></section>
+<section id="stage" hidden aria-label="起動中のアプリ"><div id="surface"></div><a id="stage-browser" target="_blank" rel="noopener noreferrer" aria-label="ブラウザで開く" title="ブラウザで開く">↗</a><button id="stage-retry" type="button" aria-label="アプリを再読み込み" title="アプリを再読み込み">↻</button><button id="back" type="button" aria-label="Hubへ戻る" title="Hubへ戻る">⌂</button></section>
 <script src="catalog-runtime.js" defer></script>
 <script src="app.js" defer></script></body></html>

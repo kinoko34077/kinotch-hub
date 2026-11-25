@@ -413,8 +413,10 @@ def main():
         definitions = json.loads((ROOT / 'catalog/public-apps.json').read_text(encoding='utf-8'))
         data = collect(definitions, previous=read_previous())
         write_atomic(args.output, data)
-    except (CatalogError, MappedReadError):
-        parser.exit(1, 'Public catalog collection incomplete or invalid; no new snapshot written.\n')
+    except CatalogError as error:
+        parser.exit(1, 'Public catalog collection incomplete or invalid (' + str(error) + '); no new snapshot written.\n')
+    except MappedReadError:
+        parser.exit(1, 'Public catalog pagination incomplete; no new snapshot written.\n')
     print('Public catalog validated: repositories=' + str(len(data['repositories'])) +
           ' applications=' + str(len(data['applications'])))
 
