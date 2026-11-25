@@ -10,7 +10,7 @@ let sourceButton=null,selected=null,press=null,blockedClick=null,backdropPressed
 function currentApp(app){return app&&apps.find(a=>a.id===app.id&&a.url===app.url);}
 function eligible(app){return !!currentApp(app);}
 const dock=document.querySelector('#home-dock'),handle=document.querySelector('#home-handle');
-let dockGesture=null,skipHandleClick=false;
+let dockGesture=null;
 function expandHome(expanded){
   dock.dataset.expanded=String(expanded);back.hidden=!expanded;handle.setAttribute('aria-expanded',String(expanded));
   handle.setAttribute('aria-label',expanded?'ホーム操作を折り畳む':'ホーム操作を展開');
@@ -20,15 +20,15 @@ function expandHome(expanded){
 function setDockSide(side){dock.dataset.side=side;expandHome(!back.hidden);}
 handle.addEventListener('pointerdown',e=>{
   if(!e.isPrimary||e.button!==0)return;
-  skipHandleClick=false;
-  dockGesture={id:e.pointerId,x:e.clientX,y:e.clientY,top:dock.getBoundingClientRect().top+dock.getBoundingClientRect().height/2,vertical:false};
+  dockGesture={id:e.pointerId,x:e.clientX,y:e.clientY,top:dock.getBoundingClientRect().top+dock.getBoundingClientRect().height/2,vertical:false,moved:false};
   handle.setPointerCapture(e.pointerId);
 });
 handle.addEventListener('pointermove',e=>{
   const g=dockGesture;if(!g||g.id!==e.pointerId)return;
   const dx=e.clientX-g.x,dy=e.clientY-g.y;
+  if(Math.hypot(dx,dy)>10)g.moved=true;
   if(g.vertical||(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)*1.25)){
-    g.vertical=true;skipHandleClick=true;
+    g.vertical=true;
     dock.style.setProperty('--dock-y',Math.max(0,Math.min(100,(g.top+dy)/Math.max(1,stage.clientHeight)*100))+'%');
   }
 });
@@ -38,18 +38,18 @@ handle.addEventListener('pointerup',e=>{
   const dx=e.clientX-g.x,dy=e.clientY-g.y;
   if(g.vertical)return;
   if(Math.abs(dx)>24&&Math.abs(dx)>Math.abs(dy)*1.25){
-    skipHandleClick=true;
     const inward=dock.dataset.side==='left'?dx:-dx;
     if(inward>stage.clientWidth*.55){setDockSide(dock.dataset.side==='left'?'right':'left');}
     else expandHome(inward>0);
-  }else if(Math.hypot(dx,dy)>10)skipHandleClick=true;
+  }else if(!g.moved&&Math.hypot(dx,dy)<=10){expandHome(back.hidden);}
 });
 for(const name of ['pointercancel','lostpointercapture'])handle.addEventListener(name,e=>{
-  if(dockGesture?.id===e.pointerId){dockGesture=null;skipHandleClick=true;}
+  if(dockGesture?.id===e.pointerId)dockGesture=null;
 });
+// Pointer taps are handled exactly once by pointerup. Keyboard/AT clicks
+// have no pointing device; do not rely on synthesized touch click delivery.
 handle.addEventListener('click',e=>{
-  if(skipHandleClick&&e.detail!==0){skipHandleClick=false;return;}
-  skipHandleClick=false;expandHome(back.hidden);
+  if(e.detail===0&&!e.pointerType)expandHome(back.hidden);
 });
 handle.addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setDockSide(e.key==='ArrowLeft'?'left':'right');}
