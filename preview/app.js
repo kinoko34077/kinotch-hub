@@ -32,19 +32,26 @@ function showMenu(app,button){
   menu.style.top=Math.max(12,Math.min(r.bottom+m.height+8<=h-12?r.bottom+8:r.top-m.height-8,h-m.height-12))+'px';
   openButton.focus();
 }
-menu.addEventListener('close',()=>{const old=selected;selected=null;old?.button.setAttribute('aria-expanded','false');if(!home.hidden)old?.button.focus();});
+function closeMenu(restoreFocus=true){
+  const old=selected;selected=null;
+  old?.button.setAttribute('aria-expanded','false');
+  if(menu.open)menu.close();
+  if(restoreFocus&&!home.hidden)old?.button.focus();
+}
+menu.addEventListener('cancel',e=>{e.preventDefault();closeMenu();});
+menu.addEventListener('close',()=>{if(!menu.open&&selected)closeMenu();});
 menu.addEventListener('pointerdown',e=>{backdropPressed=e.target===menu;});
-menu.addEventListener('click',e=>{if(e.target===menu&&backdropPressed)menu.close();backdropPressed=false;});
-document.querySelector('#menu-cancel').addEventListener('click',()=>menu.close());
-openButton.addEventListener('click',()=>{if(!selected)return;const {app,button}=selected;menu.close();launch(app,button);});
-browserLink.addEventListener('click',()=>menu.close());
+menu.addEventListener('click',e=>{if(e.target===menu&&backdropPressed)closeMenu();backdropPressed=false;});
+document.querySelector('#menu-cancel').addEventListener('click',()=>closeMenu());
+openButton.addEventListener('click',()=>{if(!selected)return;const {app,button}=selected;closeMenu(false);launch(app,button);});
+browserLink.addEventListener('click',()=>closeMenu());
 shareButton.addEventListener('click',async()=>{
   if(!selected)return;const current=selected,url=appUrl(current.app);
   if(typeof navigator.share==='function'){
-    try{await navigator.share({title:current.app.title,url});if(selected===current&&menu.open)menu.close();return;}
+    try{await navigator.share({title:current.app.title,url});if(selected===current&&menu.open)closeMenu();return;}
     catch(e){if(e?.name==='AbortError')return;}
   }
-  try{if(!navigator.clipboard?.writeText)throw new Error('unavailable');await navigator.clipboard.writeText(url);if(selected===current&&menu.open){menu.close();feedback.textContent='リンクをコピーしました';}}
+  try{if(!navigator.clipboard?.writeText)throw new Error('unavailable');await navigator.clipboard.writeText(url);if(selected===current&&menu.open){closeMenu();feedback.textContent='リンクをコピーしました';}}
   catch{if(selected===current&&menu.open){manualShare.hidden=false;shareUrl.value=url;shareUrl.focus();shareUrl.select();}}
 });
 for(const app of apps){
