@@ -64,6 +64,119 @@ def start_server():
     return server
 
 
+
+# Data continuity is distinct from storage availability. All values below are
+# synthetic, scoped to one disposable browser context per case.
+STATE_PROBE = r"""async ({value}) => {
+  const result = {origin: self.origin, parentAccess: false};
+  try { result.parentAccess = parent !== self && !!parent.document.body; } catch(e) {}
+  try {
+    if (value !== null) localStorage.setItem('r0-continuity', value);
+    result.local = {value: localStorage.getItem('r0-continuity')};
+  } catch(e) { result.local = {error: e.name}; }
+  try {
+    const db = await new Promise((resolve,reject) => {
+      const req = indexedDB.open('r0-continuity',1);
+      req.onupgradeneeded=()=>req.result.createObjectStore('state');
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+      req.onblocked=()=>reject(new Error('blocked'));
+    });
+    try {
+      const mode = value === null ? 'readonly' : 'readwrite';
+      result.idb = {value: await new Promise((resolve,reject) => {
+        const tx=db.transaction('state',mode), store=tx.objectStore('state');
+        if(value !== null) store.put(value,'draft');
+        const req=store.get('draft');
+        tx.oncomplete=()=>resolve(req.result ?? null);
+        tx.onabort=()=>reject(tx.error || new Error('aborted'));
+        tx.onerror=()=>reject(tx.error || req.error);
+      })};
+    } finally { db.close(); }
+  } catch(e) { result.idb = {error: e.name}; }
+  return result;
+}"""
+
+
+def continuity_probe(browser, base, cross, cross_site):
+    """Exercise read/write visibility in both directions, not just open()."""
+    flags = 'allow-scripts allow-same-origin'
+    cases = (
+        ('opaque', base, 'allow-scripts', False),
+        ('same-origin-trusted', base, flags, False),
+        ('same-site-cross-origin', cross, flags, False),
+        ('cross-site-cross-origin', cross_site, flags, False),
+        ('top-level-sibling-path', base, None, True),
+    )
+    reports = []
+
+    def snapshot(target, value=None):
+        return target.evaluate(STATE_PROBE, {'value': value})
+
+    def values(state):
+        return tuple(state[k].get('value') for k in ('local', 'idb'))
+
+    def enter(page, app_url, sandbox, top_level):
+        page.goto(base+'/hub/')
+        if top_level:
+            page.goto(app_url)
+            return page
+        page.evaluate('([u,f]) => launch(u,f)', [app_url, sandbox])
+        page.frame_locator('iframe').get_by_label('draft').wait_for()
+        frame = page.frame_locator('iframe').get_by_label('draft').element_handle().owner_frame()
+        assert frame is not None
+        return frame
+
+    for label, origin, sandbox, top_level in cases:
+        context = browser.new_context(viewport={'width':390, 'height':844})
+        try:
+            page = context.new_page()
+            app_url = origin+'/app'
+            page.goto(app_url)
+            seed = snapshot(page, 'direct')
+            assert values(seed) == ('direct','direct'), (label,seed)
+            target = enter(page, app_url, sandbox, top_level)
+            before = snapshot(target)
+            written = snapshot(target, 'embedded')
+            target = enter(page, app_url, sandbox, top_level)
+            reopened = snapshot(target)
+            page.goto(app_url)
+            direct_after = snapshot(page)
+            assert values(direct_after)[0] in ('direct','embedded'), (label,direct_after)
+            assert values(direct_after)[1] in ('direct','embedded'), (label,direct_after)
+            if label == 'opaque':
+                assert 'error' in before['local'] and 'error' in before['idb'], before
+                assert not before['parentAccess'], before
+                assert values(direct_after) == ('direct','direct'), direct_after
+            elif label in ('same-origin-trusted','top-level-sibling-path'):
+                assert values(before) == ('direct','direct'), (label,before)
+                assert values(written) == ('embedded','embedded'), (label,written)
+                assert values(reopened) == ('embedded','embedded'), (label,reopened)
+                assert values(direct_after) == ('embedded','embedded'), (label,direct_after)
+                assert before['parentAccess'] == (label=='same-origin-trusted'), before
+            else:
+                assert not before['parentAccess'], before
+                # Same-site and cross-site visibility is an observation, not
+                # an assumption about every browser or policy configuration.
+            reports.append({
+                'case':label,'appUrl':app_url,'topSite':base,
+                'directSeed':seed,'embeddedBefore':before,
+                'embeddedWritten':written,'embeddedReopened':reopened,
+                'directAfter':direct_after,
+                'directToEmbedded':{
+                    k:before[k].get('value')=='direct' for k in ('local','idb')
+                },
+                'embeddedToDirect':{
+                    k:direct_after[k].get('value')=='embedded' for k in ('local','idb')
+                },
+            })
+        finally:
+            context.close()
+    print('R0_CONTINUITY ' + json.dumps(reports,ensure_ascii=False))
+    return reports
+
+
+
 def main():
     shell, other = start_server(), start_server()
     base = f'http://127.0.0.1:{shell.server_port}'
@@ -97,6 +210,7 @@ def main():
                     reports.append({'case':label,'viewport':viewport,**result,
                                     'topUrlUnchanged':True,'fullViewport':True,'returnHome':True})
                 page.close()
+            continuity_probe(browser, base, cross, f'http://localhost:{other.server_port}')
             browser.close()
     finally:
         for server in (shell, other):
