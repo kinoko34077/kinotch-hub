@@ -98,7 +98,7 @@ STATE_PROBE = r"""async ({value}) => {
 }"""
 
 
-def continuity_probe(browser, base, cross, cross_site):
+def continuity_probe(browser, base, cross, cross_site, partitioned=False):
     """Exercise read/write visibility in both directions, not just open()."""
     flags = 'allow-scripts allow-same-origin'
     cases = (
@@ -156,8 +156,15 @@ def continuity_probe(browser, base, cross, cross_site):
                 assert before['parentAccess'] == (label=='same-origin-trusted'), before
             else:
                 assert not before['parentAccess'], before
-                # Same-site and cross-site visibility is an observation, not
-                # an assumption about every browser or policy configuration.
+                if partitioned and label == 'cross-site-cross-origin':
+                    assert values(before) == (None,None), (label,before)
+                    assert values(written) == ('embedded','embedded'), (label,written)
+                    assert values(reopened) == ('embedded','embedded'), (label,reopened)
+                    assert values(direct_after) == ('direct','direct'), (label,direct_after)
+                elif partitioned and label == 'same-site-cross-origin':
+                    assert values(before) == ('direct','direct'), (label,before)
+                    assert values(direct_after) == ('embedded','embedded'), (label,direct_after)
+                # Default automation mode is only an observation.
             reports.append({
                 'case':label,'appUrl':app_url,'topSite':base,
                 'directSeed':seed,'embeddedBefore':before,
@@ -172,8 +179,68 @@ def continuity_probe(browser, base, cross, cross_site):
             })
         finally:
             context.close()
-    print('R0_CONTINUITY ' + json.dumps(reports,ensure_ascii=False))
+    print(('R0_PARTITIONED_CONTINUITY ' if partitioned else 'R0_CONTINUITY ') + json.dumps(reports,ensure_ascii=False))
     return reports
+
+
+
+
+def privacy_preserving_chromium(p, browser, executable):
+    """Restore Chromium storage partitioning disabled by the test harness.
+    Preserve all unrelated default arguments. No production/client settings.
+    """
+    session = browser.new_browser_cdp_session()
+    try:
+        args = session.send('Browser.getBrowserCommandLine')['arguments']
+    finally:
+        session.detach()
+    feature = 'ThirdPartyStoragePartitioning'
+    ignored = []
+    replacements = []
+    disabled = False
+    enabled = False
+    for prefix in ('--disable-features=', '--enable-features='):
+        switches = [arg for arg in args if arg.startswith(prefix)]
+        if not switches:
+            if prefix.startswith('--enable'):
+                replacements.append(prefix + feature)
+            continue
+        # Playwright supplies one combined feature switch. Preserve its
+        # unrelated entries rather than replacing the entire feature list.
+        assert len(switches) == 1, 'ambiguous feature arguments'
+        original = switches[0]
+        entries = original[len(prefix):].split(',')
+        present = feature in entries
+        if prefix.startswith('--disable'):
+            disabled = present
+            entries = [entry for entry in entries if entry != feature]
+        else:
+            enabled = present
+            if not present:
+                entries.append(feature)
+        if ','.join(entries) != original[len(prefix):]:
+            ignored.append(original)
+            if entries:
+                replacements.append(prefix + ','.join(entries))
+    print('R0_AUTOMATION_FLAGS ' + json.dumps({
+        'partitionDisabledByDefault':disabled,
+        'partitionExplicitlyEnabledByDefault':enabled,
+    }))
+    # All names are reserved .test hostnames and resolve solely to the
+    # existing synthetic loopback servers. No proxy, TLS or origin bypass.
+    replacements.append('--host-resolver-rules=MAP hub.r0-a.test 127.0.0.1, MAP app.r0-a.test 127.0.0.1, MAP app.r0-b.test 127.0.0.1')
+    private = p.chromium.launch(executable_path=executable,
+                                ignore_default_args=ignored,args=replacements)
+    session = private.new_browser_cdp_session()
+    try:
+        effective = session.send('Browser.getBrowserCommandLine')['arguments']
+    finally:
+        session.detach()
+    assert not any(feature in arg.split('=',1)[-1].split(',')
+                   for arg in effective if arg.startswith('--disable-features='))
+    assert any(feature in arg.split('=',1)[-1].split(',')
+               for arg in effective if arg.startswith('--enable-features='))
+    return private
 
 
 
@@ -211,7 +278,15 @@ def main():
                                     'topUrlUnchanged':True,'fullViewport':True,'returnHome':True})
                 page.close()
             continuity_probe(browser, base, cross, f'http://localhost:{other.server_port}')
-            browser.close()
+            partitioned = privacy_preserving_chromium(p, browser, executable)
+            try:
+                continuity_probe(partitioned,
+                    f'http://hub.r0-a.test:{shell.server_port}',
+                    f'http://app.r0-a.test:{other.server_port}',
+                    f'http://app.r0-b.test:{other.server_port}', partitioned=True)
+            finally:
+                partitioned.close()
+                browser.close()
     finally:
         for server in (shell, other):
             server.shutdown()
