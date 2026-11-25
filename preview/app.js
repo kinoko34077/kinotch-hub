@@ -1,32 +1,40 @@
 'use strict';
-let apps=[CatalogRuntime.fixture],snapshot=null,refreshing=false,expiryTimer=null,lastRefresh=0;
+const diagnostic=location.hash==='#fixture';
+const initialApps=()=>diagnostic?[CatalogRuntime.fixture]:[];
+let apps=initialApps(),snapshot=null,refreshing=false,lastRefresh=0,activeApp=null;
 const home=document.querySelector('#home'),stage=document.querySelector('#stage'),surface=document.querySelector('#surface'),back=document.querySelector('#back');
 const menu=document.querySelector('#app-menu'),menuTitle=document.querySelector('#menu-title'),menuNote=document.querySelector('#menu-note');
 const openButton=document.querySelector('#menu-open'),shareButton=document.querySelector('#menu-share'),browserLink=document.querySelector('#menu-browser');
 const manualShare=document.querySelector('#manual-share'),shareUrl=document.querySelector('#share-url'),feedback=document.querySelector('#feedback');
 let sourceButton=null,selected=null,press=null,blockedClick=null,backdropPressed=false;
-function eligible(app){return apps.includes(app)&&Date.now()<app.expires;}
-function appUrl(app){return new URL(app.url,document.baseURI).href;}
-function launch(app,button){
-  if(!eligible(app)) { expireCatalog();return; }
-  if(!app.embed){showMenu(app,button);return;}
-  sourceButton=button;
+function eligible(app){return apps.includes(app);}
+const external=document.querySelector('#stage-browser'),retry=document.querySelector('#stage-retry');
+function loadFrame(app){
   const frame=document.createElement('iframe');
   frame.title=app.title;frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.src=appUrl(app);
-  surface.replaceChildren(frame);home.hidden=true;stage.hidden=false;back.focus();
+  surface.replaceChildren(frame);
 }
-function returnHome(){surface.replaceChildren();stage.hidden=true;home.hidden=false;sourceButton?.focus();sourceButton=null;}
+function appUrl(app){return new URL(app.url,document.baseURI).href;}
+function launch(app,button){
+  if(!eligible(app))return;
+  sourceButton=button;activeApp=app;
+  external.href=appUrl(app);external.hidden=app.id==='probe';retry.hidden=app.id==='probe';
+  loadFrame(app);home.hidden=true;stage.hidden=false;back.focus();
+}
+function returnHome(){surface.replaceChildren();stage.hidden=true;home.hidden=false;const id=sourceButton?.dataset.appId;activeApp=null;external.removeAttribute('href');[...document.querySelectorAll('#apps button')].find(b=>b.dataset.appId===id)?.focus();sourceButton=null;}
+retry.addEventListener('click',()=>{if(activeApp&&apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url))loadFrame(activeApp);});
+external.addEventListener('click',e=>{if(!activeApp||!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url))e.preventDefault();});
 function clearPress(){if(press){clearTimeout(press.timer);press=null;}}
 function showMenu(app,button){
   if(menu.open||!eligible(app))return;
   clearPress();selected={app,button};button.setAttribute('aria-expanded','true');
-  menuTitle.textContent=app.title;menuNote.textContent=app.note;browserLink.href=appUrl(app);openButton.hidden=!app.embed;
+  menuTitle.textContent=app.title;menuNote.textContent=app.note;browserLink.href=appUrl(app);openButton.hidden=false;
   manualShare.hidden=true;feedback.textContent='';backdropPressed=false;
   menu.showModal();
   const r=button.getBoundingClientRect(), m=menu.getBoundingClientRect(),w=window.innerWidth,h=window.innerHeight;
   menu.style.left=Math.max(12,Math.min(r.left+r.width/2-m.width/2,w-m.width-12))+'px';
   menu.style.top=Math.max(12,Math.min(r.bottom+m.height+8<=h-12?r.bottom+8:r.top-m.height-8,h-m.height-12))+'px';
-  (app.embed?openButton:browserLink).focus();
+  openButton.focus();
 }
 function closeMenu(restoreFocus=true){
   const old=selected;selected=null;
@@ -40,9 +48,9 @@ menu.addEventListener('pointerdown',e=>{backdropPressed=e.target===menu;});
 menu.addEventListener('click',e=>{if(e.target===menu&&backdropPressed)closeMenu();backdropPressed=false;});
 document.querySelector('#menu-cancel').addEventListener('click',()=>closeMenu());
 openButton.addEventListener('click',()=>{if(!selected||!eligible(selected.app))return;const {app,button}=selected;closeMenu(false);launch(app,button);});
-browserLink.addEventListener('click',e=>{if(!selected||!eligible(selected.app)){e.preventDefault();expireCatalog();return;}closeMenu();});
+browserLink.addEventListener('click',e=>{if(!selected||!eligible(selected.app)){e.preventDefault();return;}closeMenu();});
 shareButton.addEventListener('click',async()=>{
-  if(!selected||!eligible(selected.app)){expireCatalog();return;}const current=selected,url=appUrl(current.app);
+  if(!selected||!eligible(selected.app)){return;}const current=selected,url=appUrl(current.app);
   if(typeof navigator.share==='function'){
     try{await navigator.share({title:current.app.title,url});if(selected===current&&menu.open)closeMenu();return;}
     catch(e){if(e?.name==='AbortError')return;}
@@ -73,29 +81,26 @@ for(const app of apps){
   document.querySelector('#apps').append(button);
 }}
 const catalogStatus=document.querySelector('#catalog-status');
-function expireCatalog(){
-  if(!snapshot||Date.now()<snapshot.expires)return;
-  closeMenu();snapshot=null;apps=[CatalogRuntime.fixture];renderApps();catalogStatus.textContent='公開カタログの期限切れ · 再取得待ち';
-}
 async function refreshCatalog(){
   if(refreshing)return;refreshing=true;lastRefresh=Date.now();
   try{
     const next=await CatalogRuntime.read();
-    if(!next){expireCatalog();catalogStatus.textContent=snapshot?'取得失敗 · 有効な一覧を保持 · 更新 '+new Date(snapshot.generated).toLocaleString('ja-JP'):'公開カタログを取得できません';return;}
-    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[CatalogRuntime.fixture,...next.items];renderApps();}
-    const active=snapshot;const age=Date.now()-active.generated;if(Date.now()>=active.expires){expireCatalog();return;}
-    catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
-    clearTimeout(expiryTimer);expiryTimer=setTimeout(expireCatalog,Math.max(0,active.expires-Date.now()));
+    if(!next){catalogStatus.textContent=snapshot?'取得失敗 · 保存済み一覧 · 更新 '+new Date(snapshot.generated).toLocaleString('ja-JP'):'公開カタログを取得できません';document.querySelector('#catalog-retry').hidden=false;return;}
+    document.querySelector('#catalog-retry').hidden=next.source!=='cached';
+    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[...initialApps(),...next.items];renderApps();}
+    const active=snapshot;const age=Date.now()-active.generated;
+    catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':'')+(Date.now()>=active.expires||age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
+    if(activeApp&&!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url)){external.hidden=true;retry.hidden=true;}
   }finally{refreshing=false;}
 }
 renderApps();refreshCatalog();
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){expireCatalog();if(Date.now()-lastRefresh>300000)refreshCatalog();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(Date.now()-lastRefresh>300000)refreshCatalog();}});
 document.addEventListener('pointermove',e=>{if(press&&press.id===e.pointerId&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>10)clearPress();},{passive:true});
 for(const name of ['pointerup','pointercancel'])document.addEventListener(name,e=>{if(press&&press.id===e.pointerId)clearPress();},{passive:true});
 window.addEventListener('blur',clearPress);window.addEventListener('scroll',clearPress,{passive:true});
 menu.addEventListener('contextmenu',e=>e.preventDefault());
 back.addEventListener('click',returnHome);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!stage.hidden)returnHome();});
-const mode=document.querySelector('#mode');
-mode.textContent=(matchMedia('(display-mode: standalone)').matches||navigator.standalone===true)?'ホーム画面起動モード':'ブラウザ表示モード';
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{mode.textContent+=' · オフライン準備失敗';});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{feedback.textContent='オフライン準備に失敗しました';});
+document.querySelector('#catalog-retry').addEventListener('click',refreshCatalog);
+window.addEventListener('online',refreshCatalog);
