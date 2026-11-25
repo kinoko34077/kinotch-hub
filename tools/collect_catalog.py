@@ -35,6 +35,10 @@ class CatalogError(ValueError):
     """Fixed diagnostics, never echo upstream bodies or untrusted strings."""
 
 
+class ProbeUnavailable(CatalogError):
+    """Transient network/HTTP failure, distinct from invalid local definitions."""
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -48,19 +52,19 @@ def request(url, accept):
                                   'Accept': accept}), timeout=12
         ) as response:
             if response.status != 200:
-                raise CatalogError('UNEXPECTED_HTTP_STATUS')
+                raise ProbeUnavailable('UNEXPECTED_HTTP_STATUS')
             body = response.read(MAX_BODY + 1)
             if len(body) > MAX_BODY:
-                raise CatalogError('RESPONSE_LIMIT')
+                raise ProbeUnavailable('RESPONSE_LIMIT')
             return body, response.headers.get_content_type(), response.headers.get('Link', '')
     except HTTPError as error:
         if error.code in (301, 302, 303, 307, 308, 404, 410):
             error.close()
             return None
         error.close()
-        raise CatalogError('UPSTREAM_HTTP_FAILURE') from None
+        raise ProbeUnavailable('UPSTREAM_HTTP_FAILURE') from None
     except (URLError, TimeoutError, OSError):
-        raise CatalogError('UPSTREAM_TRANSPORT_FAILURE') from None
+        raise ProbeUnavailable('UPSTREAM_TRANSPORT_FAILURE') from None
 
 
 def get_api_page(path):
@@ -238,6 +242,17 @@ def curated_app(definition, base, has_pages, get):
 
 
 def discover(repos, definitions, observed, get):
+    # A fully observed public list is authoritative for removals. Unknown
+    # app publication is omitted, not renewed from a previous snapshot.
+    failed_probes = 0
+    original_get = get
+    def get(url, kind):
+        nonlocal failed_probes
+        try:
+            return original_get(url, kind)
+        except ProbeUnavailable:
+            failed_probes += 1
+            return None
     by_id, seen_keys = {}, set()
     for entry in definitions:
         if not isinstance(entry, dict) or not isinstance(entry.get('repositoryId'), str):
@@ -270,6 +285,8 @@ def discover(repos, definitions, observed, get):
                     apps.append(dict(app, id='repo:' + repo['id'] + ':main',
                                      repositoryId=repo['id'], publication={
                                          'basis': 'github-pages', 'observedAt': observed}))
+    if failed_probes:
+        print('Temporarily unavailable publication probes=' + str(failed_probes))
     return apps
 
 
