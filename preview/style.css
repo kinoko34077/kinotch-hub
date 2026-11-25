@@ -31,13 +31,25 @@ details{font-size:.76rem;color:#c5cfdf;margin:0 4px}summary{cursor:pointer}detai
 #menu-cancel{color:#426398}
 #manual-share{padding:10px 16px;font-size:.75rem}#share-url{display:block;width:100%;margin-top:5px;font-size:.8rem;padding:7px;border:1px solid #b5bdca;border-radius:6px}
 #stage{position:fixed;inset:0;background:#fff}#surface{width:100%;height:100%}iframe{display:block;width:100%;height:100%;border:0}
-#back{position:absolute;z-index:2;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));width:44px;height:44px;border:1px solid #64748b;border-radius:50%;background:#111827e8;color:white;font-size:24px}
 [hidden]{display:none!important}button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
 @media(min-width:540px){.apps{grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:28px 12px}.app-icon{width:72px}.app-name{font-size:.78rem}}
 @media(prefers-reduced-motion:reduce){.app-icon{transition:none}}
 
 #catalog-status{margin:20px 0 0}#catalog-status+.hint{margin-top:5px}
 
-#stage-browser,#stage-retry{position:fixed;z-index:2;bottom:max(12px,env(safe-area-inset-bottom));width:44px;height:44px;border-radius:50%;border:1px solid #ffffff55;background:#202b3be6;color:white;display:grid;place-items:center;text-decoration:none;font-size:22px;cursor:pointer}#stage-browser{right:calc(max(12px,env(safe-area-inset-right)) + 50px)}#stage-retry{right:calc(max(12px,env(safe-area-inset-right)) + 100px)}#stage-browser[hidden],#stage-retry[hidden],#catalog-retry[hidden],#gesture-hint[hidden]{display:none}#catalog-retry{display:block;margin:6px auto;border:0;border-radius:8px;background:#ffffff22;color:inherit;padding:6px 12px}
 
 #repo-panel{margin:12px 4px}#repo-list{list-style:none;padding:0;margin:8px 0;display:grid;gap:0}#repo-list a{display:block;color:inherit;text-decoration:none;overflow-wrap:anywhere;padding:10px 4px;border-bottom:1px solid #ffffff22}#repo-list a:focus-visible{outline:2px solid #a8c7ff}
+
+#catalog-retry{display:block;margin:6px auto;border:0;border-radius:8px;background:#ffffff22;color:inherit;padding:6px 12px}
+#home-dock{position:absolute;z-index:2;top:clamp(calc(env(safe-area-inset-top) + 29px),var(--dock-y,50%),calc(100% - env(safe-area-inset-bottom) - 29px));transform:translateY(-50%);display:flex;align-items:center;gap:4px;pointer-events:none}
+#home-dock[data-side=right]{right:env(safe-area-inset-right)}
+#home-dock[data-side=left]{left:env(safe-area-inset-left);flex-direction:row-reverse}
+#home-handle,#back{pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;border:1px solid #ffffff55;background:#202b3bd9;color:white;display:grid;place-items:center;padding:0}
+#home-handle{width:16px;height:56px;border-radius:9px 0 0 9px;font-size:19px}
+#home-dock[data-side=left] #home-handle{border-radius:0 9px 9px 0}
+#back{width:44px;height:44px;border-radius:50%;font-size:25px}
+#home-handle:focus-visible{outline-offset:-3px}
+
+/* Expanded handle sits inward of the home button so outward swipes have travel. */
+#home-dock[data-side=right][data-expanded=true]{flex-direction:row-reverse}
+#home-dock[data-side=left][data-expanded=true]{flex-direction:row}

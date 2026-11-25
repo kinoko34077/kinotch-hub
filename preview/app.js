@@ -9,7 +9,52 @@ const manualShare=document.querySelector('#manual-share'),shareUrl=document.quer
 let sourceButton=null,selected=null,press=null,blockedClick=null,backdropPressed=false;
 function currentApp(app){return app&&apps.find(a=>a.id===app.id&&a.url===app.url);}
 function eligible(app){return !!currentApp(app);}
-const external=document.querySelector('#stage-browser'),retry=document.querySelector('#stage-retry');
+const dock=document.querySelector('#home-dock'),handle=document.querySelector('#home-handle');
+let dockGesture=null;
+function expandHome(expanded){
+  dock.dataset.expanded=String(expanded);back.hidden=!expanded;handle.setAttribute('aria-expanded',String(expanded));
+  handle.setAttribute('aria-label',expanded?'ホーム操作を折り畳む':'ホーム操作を展開');
+  handle.textContent=dock.dataset.side==='left'?(expanded?'‹':'›'):(expanded?'›':'‹');
+  if(!expanded&&document.activeElement===back)handle.focus({preventScroll:true});
+}
+function setDockSide(side){dock.dataset.side=side;expandHome(!back.hidden);}
+handle.addEventListener('pointerdown',e=>{
+  if(!e.isPrimary||e.button!==0)return;
+  dockGesture={id:e.pointerId,x:e.clientX,y:e.clientY,top:dock.getBoundingClientRect().top+dock.getBoundingClientRect().height/2,vertical:false,moved:false};
+  handle.setPointerCapture(e.pointerId);
+});
+handle.addEventListener('pointermove',e=>{
+  const g=dockGesture;if(!g||g.id!==e.pointerId)return;
+  const dx=e.clientX-g.x,dy=e.clientY-g.y;
+  if(Math.hypot(dx,dy)>10)g.moved=true;
+  if(g.vertical||(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)*1.25)){
+    g.vertical=true;
+    dock.style.setProperty('--dock-y',Math.max(0,Math.min(100,(g.top+dy)/Math.max(1,stage.clientHeight)*100))+'%');
+  }
+});
+handle.addEventListener('pointerup',e=>{
+  const g=dockGesture;if(!g||g.id!==e.pointerId)return;
+  dockGesture=null;
+  const dx=e.clientX-g.x,dy=e.clientY-g.y;
+  if(g.vertical)return;
+  if(Math.abs(dx)>24&&Math.abs(dx)>Math.abs(dy)*1.25){
+    const inward=dock.dataset.side==='left'?dx:-dx;
+    if(inward>stage.clientWidth*.55){setDockSide(dock.dataset.side==='left'?'right':'left');}
+    else expandHome(inward>0);
+  }else if(!g.moved&&Math.hypot(dx,dy)<=10){expandHome(back.hidden);}
+});
+for(const name of ['pointercancel','lostpointercapture'])handle.addEventListener(name,e=>{
+  if(dockGesture?.id===e.pointerId)dockGesture=null;
+});
+// Pointer taps are handled exactly once by pointerup. Keyboard/AT clicks
+// have no pointing device; do not rely on synthesized touch click delivery.
+handle.addEventListener('click',e=>{
+  if(e.detail===0&&!e.pointerType)expandHome(back.hidden);
+});
+handle.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setDockSide(e.key==='ArrowLeft'?'left':'right');}
+});
+
 function loadFrame(app){
   const frame=document.createElement('iframe');
   frame.title=app.title;frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.src=appUrl(app);
@@ -19,12 +64,9 @@ function appUrl(app){return new URL(app.url,document.baseURI).href;}
 function launch(app,button){
   app=currentApp(app);if(!app)return;
   sourceButton=button;activeApp=app;
-  external.href=appUrl(app);external.hidden=app.id==='probe';retry.hidden=app.id==='probe';
-  loadFrame(app);home.hidden=true;stage.hidden=false;back.focus();
+  loadFrame(app);home.hidden=true;stage.hidden=false;expandHome(false);handle.focus({preventScroll:true});
 }
-function returnHome(){surface.replaceChildren();stage.hidden=true;home.hidden=false;const id=sourceButton?.dataset.appId;activeApp=null;external.removeAttribute('href');[...document.querySelectorAll('#apps button')].find(b=>b.dataset.appId===id)?.focus();sourceButton=null;}
-retry.addEventListener('click',()=>{if(activeApp&&apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url))loadFrame(activeApp);});
-external.addEventListener('click',e=>{if(!activeApp||!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url))e.preventDefault();});
+function returnHome(){surface.replaceChildren();stage.hidden=true;home.hidden=false;const id=sourceButton?.dataset.appId;activeApp=null;expandHome(false);[...document.querySelectorAll('#apps button')].find(b=>b.dataset.appId===id)?.focus();sourceButton=null;}
 function clearPress(){if(press){clearTimeout(press.timer);press=null;}}
 function showMenu(app,button){
   app=currentApp(app);if(menu.open||!app)return;
@@ -139,7 +181,6 @@ async function refreshCatalog(){
     if(!snapshot||next.generated>snapshot.generated){snapshot=next;apps=[...initialApps(),...next.items];renderApps();renderRepositories(next.data);}
     const active=snapshot;const age=Date.now()-active.generated;
     catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':'')+(Date.now()>=active.expires||age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
-    if(activeApp){const available=!!currentApp(activeApp)&&activeApp.id!=='probe';external.hidden=!available;retry.hidden=!available;}
   }finally{refreshing=false;}
 }
 renderApps();refreshCatalog();

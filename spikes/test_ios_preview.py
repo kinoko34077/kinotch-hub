@@ -29,6 +29,10 @@ def catalog_fixture():
 def mock_catalog(page,data):
     page.route('**/catalog.json',lambda route:route.fulfill(status=200,json=data))
 
+def go_home(page):
+    if not page.locator('#back').is_visible():page.locator('#home-handle').click()
+    page.locator('#back').click()
+
 try:
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -85,14 +89,14 @@ try:
             assert page.url==base+'#fixture'
             rect=page.locator('iframe').bounding_box()
             assert rect['width']==viewport['width'] and rect['height']==viewport['height'],rect
-            page.locator('#back').click()
+            go_home(page)
             assert page.locator('iframe').count()==0
             for app_id,url in [('tarot','https://kinoko34077.github.io/tarot-draw/'),('chord','https://kinoko34077.github.io/Micro-Chordbot/'),('warp','https://kinoko34077.github.io/frequency-warp-vst/'),('clock','https://standby-display.kinotch.workers.dev/')]:
                 page.locator(f'[data-alias={app_id}]').click()
                 assert page.locator('iframe').get_attribute('src')==url
                 assert page.locator('iframe').get_attribute('sandbox')=='allow-scripts'
                 assert page.url==base+'#fixture'
-                page.locator('#back').click()
+                go_home(page)
             page.evaluate('navigator.serviceWorker.ready')
             page.goto(base)
             page.reload()
@@ -133,6 +137,37 @@ try:
         assert page.locator('iframe').count()==0
         tile.tap()
         page.frame_locator('iframe').locator('#draft').wait_for()
+        handle=page.locator('#home-handle')
+        expect(page.locator('#back')).to_be_hidden()
+        expect(page.locator('#stage-browser,#stage-retry')).to_have_count(0)
+        box=handle.bounding_box()
+        assert box['width']<=16 and box['height']<=56
+        def swipe(dx,dy):
+            r=handle.bounding_box()
+            sx,sy=r['x']+r['width']/2,r['y']+r['height']/2
+            touch('touchStart',[{'x':sx,'y':sy}])
+            touch('touchMove',[{'x':sx+dx,'y':sy+dy}])
+            touch('touchEnd',[])
+        swipe(-65,0)
+        expect(page.locator('#back')).to_be_visible()
+        # No iframe replacement when changing the dock.
+        page.frame_locator('iframe').locator('#draft').fill('keep')
+        swipe(35,0)
+        expect(page.locator('#back')).to_be_hidden()
+        handle.tap()
+        expect(page.locator('#back')).to_be_visible()
+        handle.tap()
+        expect(page.locator('#back')).to_be_hidden()
+        y0=handle.bounding_box()['y']
+        swipe(0,100)
+        assert handle.bounding_box()['y']>y0+50
+        expect(page.locator('#back')).to_be_hidden()
+        swipe(-300,0)
+        expect(page.locator('#home-dock')).to_have_attribute('data-side','left')
+        expect(page.locator('#back')).to_be_hidden()
+        swipe(70,0)
+        expect(page.locator('#back')).to_be_visible()
+        expect(page.frame_locator('iframe').locator('#draft')).to_have_value('keep')
         page.locator('#back').tap()
         context.close()
         # New application arrives as data, with no individual launch permission.
@@ -154,12 +189,10 @@ try:
         assert not page.locator('#app-menu').is_visible()
         expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/new-app/')
         expect(page.locator('iframe')).to_have_attribute('sandbox','allow-scripts')
-        expect(page.locator('#stage-browser')).to_have_attribute('href','https://kinoko34077.github.io/new-app/')
-        page.frame_locator('iframe').locator('h1').wait_for()
-        page.locator('#stage-retry').click()
+        expect(page.locator('#stage-browser,#stage-retry')).to_have_count(0)
         page.frame_locator('iframe').locator('h1').wait_for()
         expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/new-app/')
-        page.locator('#back').click()
+        go_home(page)
         fresh.click(button='right')
         expect(page.locator('#app-menu')).to_be_visible()
         page.locator('#menu-cancel').click()
@@ -187,7 +220,7 @@ try:
         expect(page.locator('#apps button')).to_have_count(4)
         page.locator('[data-alias=tarot]').click()
         expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/tarot-draw/')
-        page.locator('#back').click()
+        go_home(page)
         assert fresh.count()==0
         ctx.close()
         # Live refresh must not replace unchanged controls, dismiss a valid
@@ -229,10 +262,10 @@ try:
         # Removal must revoke new actions, without replacing the active page.
         data['applications'].pop(0);data['repositories'].pop(0)
         advance()
-        expect(page.locator('#stage-browser')).to_be_hidden()
-        expect(page.locator('#stage-retry')).to_be_hidden()
+        expect(page.locator('#stage-browser,#stage-retry')).to_have_count(0)
+        expect(page.locator('#home-handle')).to_be_visible()
         expect(frame.locator('#draft')).to_have_value('unsaved draft')
-        page.locator('#back').click()
+        go_home(page)
         expect(tile).to_have_count(0)
         chord=page.locator('[data-alias=chord]')
         chord.click(button='right')
@@ -263,7 +296,7 @@ try:
         }""")
         ctx.close()
         browser.close()
-    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, public repository references, live refresh interaction continuity, manifest, offline shell')
+    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, edge home dock/swipe/reposition, public repository references, live refresh interaction continuity, manifest, offline shell')
 finally:
     server.shutdown()
     server.server_close()
