@@ -190,6 +190,58 @@ try:
         page.locator('#back').click()
         assert fresh.count()==0
         ctx.close()
+        # Live refresh must not replace unchanged controls, dismiss a valid
+        # menu, reload a running frame, or keep a removed target launchable.
+        ctx=browser.new_context(viewport={'width':390,'height':844})
+        page=ctx.new_page()
+        page.route('https://**/*',lambda route:route.fulfill(status=200,body='<input id="draft">',content_type='text/html'))
+        data=catalog_fixture()
+        def advance():
+            data['generatedAt']=(datetime.fromisoformat(data['generatedAt'])+timedelta(seconds=1)).isoformat().replace('+00:00','Z')
+            data['validUntil']=(datetime.fromisoformat(data['generatedAt'])+timedelta(days=3)).isoformat().replace('+00:00','Z')
+            page.evaluate('refreshCatalog()')
+        mock_catalog(page,data)
+        page.goto(base)
+        tile=page.locator('[data-alias=tarot]')
+        tile.wait_for()
+        tile.evaluate('el=>window.originalTile=el')
+        tile.focus()
+        advance()
+        assert tile.evaluate('el=>el===window.originalTile&&document.activeElement===el')
+        tile.click(button='right')
+        page.locator('#menu-share').focus()
+        advance()
+        expect(page.locator('#app-menu')).to_be_visible()
+        assert page.locator('#menu-share').evaluate('el=>document.activeElement===el')
+        assert tile.evaluate('el=>el===window.originalTile')
+        # Metadata change is not a changed URL. Keep the dialog/selection.
+        data['applications'][0]['title']='Tarot Draw renamed'
+        advance()
+        expect(page.locator('#menu-title')).to_have_text('Tarot Draw renamed')
+        expect(page.locator('#app-menu')).to_be_visible()
+        page.locator('#menu-open').click()
+        frame=page.frame_locator('iframe')
+        frame.locator('#draft').fill('unsaved draft')
+        page.locator('iframe').evaluate('el=>window.originalFrame=el')
+        advance()
+        assert page.locator('iframe').evaluate('el=>el===window.originalFrame')
+        expect(frame.locator('#draft')).to_have_value('unsaved draft')
+        # Removal must revoke new actions, without replacing the active page.
+        data['applications'].pop(0);data['repositories'].pop(0)
+        advance()
+        expect(page.locator('#stage-browser')).to_be_hidden()
+        expect(page.locator('#stage-retry')).to_be_hidden()
+        expect(frame.locator('#draft')).to_have_value('unsaved draft')
+        page.locator('#back').click()
+        expect(tile).to_have_count(0)
+        chord=page.locator('[data-alias=chord]')
+        chord.click(button='right')
+        data['applications'].pop(0);data['repositories'].pop(0)
+        advance()
+        expect(page.locator('#app-menu')).to_be_hidden()
+        expect(chord).to_have_count(0)
+        assert page.locator('iframe').count()==0
+        ctx.close()
         # Real generated artifact (not the fixture) must be admitted by the
         # actual launcher. Mock only off-origin images, never catalog.json.
         ctx=browser.new_context()
@@ -211,7 +263,7 @@ try:
         }""")
         ctx.close()
         browser.close()
-    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, public repository references, manifest, offline shell')
+    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, public repository references, live refresh interaction continuity, manifest, offline shell')
 finally:
     server.shutdown()
     server.server_close()
