@@ -89,6 +89,17 @@ class CatalogTests(unittest.TestCase):
             if kind=='manifest':return json.dumps({'name':'App','start_url':'https://[','display':'standalone'}).encode()
             raise AssertionError('unexpected request')
         self.assertEqual(c.collect([],one_page([repo()]),malformed,NOW)['applications'],[])
+    def test_complete_list_revokes_removed_app_despite_other_probe_failure(self):
+        base=c.PAGES+'/example/'
+        old=c.collect([],one_page([repo()]),app_get(base),NOW)
+        self.assertEqual(len(old['applications']),1)
+        def unavailable(url,kind):
+            if url.startswith(c.PAGES+'/other/'):
+                raise c.ProbeUnavailable('NETWORK')
+            return app_get(c.PAGES+'/still/')(url,kind)
+        new=c.collect([],one_page([repo(2,'other'),repo(3,'still')]),unavailable,NOW)
+        self.assertEqual([a['id'] for a in new['applications']],['repo:3:main'])
+        self.assertNotIn('repo:1:main',json.dumps(new))
     def test_semantic_validation_and_atomic_write(self):
         base=c.PAGES+'/example/'
         valid=c.collect([],one_page([repo()]),app_get(base),NOW)

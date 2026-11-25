@@ -9,6 +9,7 @@
 <body><main id="home">
 <header><div><h1>KiNoTch<span class="dot">.</span> Hub</h1><p id="mode" role="status"></p></div><span class="tag">PREVIEW</span></header>
 <div id="apps" class="apps" aria-label="アプリ一覧"></div>
+<p id="catalog-status" class="hint" role="status">公開カタログ取得中</p>
 <p id="gesture-hint" class="hint">タップで開く · 長押し / 右クリックでメニュー</p>
 <p id="feedback" role="status" aria-live="polite"></p>
 <details><summary>使い方・試用版について</summary><p>Safariの共有メニューから「ホーム画面に追加」。ホーム画面から起動し、アプリを選択してください。右下のホームボタンで戻ります。キーボードではShift+F10でもメニューを開けます。</p><p>公開アプリ候補の互換性は検証中です。隔離設定により保存などが動かない場合があります。</p></details>
@@ -22,4 +23,5 @@
 <button id="menu-cancel" type="button">キャンセル</button>
 </div></dialog>
 <section id="stage" hidden aria-label="起動中のアプリ"><div id="surface"></div><button id="back" type="button" aria-label="Hubへ戻る" title="Hubへ戻る">⌂</button></section>
+<script src="catalog-runtime.js" defer></script>
 <script src="app.js" defer></script></body></html>

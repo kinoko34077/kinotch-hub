@@ -1,19 +1,15 @@
 'use strict';
-const apps = Object.freeze([
-  {id:'probe',title:'動作確認用',note:'入力・画面領域・復帰',url:'fixture.html',glyph:'✓'},
-  {id:'tarot',title:'Tarot Draw',note:'公開候補・互換性未確認',url:'https://kinoko34077.github.io/tarot-draw/',iconUrl:'https://kinoko34077.github.io/tarot-draw/favicon.svg',glyph:'✦'},
-  {id:'chord',title:'μChordbot',note:'公開候補・互換性未確認',url:'https://kinoko34077.github.io/Micro-Chordbot/',iconUrl:'https://kinoko34077.github.io/Micro-Chordbot/icons/icon-192.svg',glyph:'μ'},
-  {id:'warp',title:'Frequency Warp',note:'公開候補・互換性未確認',url:'https://kinoko34077.github.io/frequency-warp-vst/',glyph:'≈'},
-  {id:'clock',title:'Standby Display',note:'外部公開候補・互換性未確認',url:'https://standby-display.kinotch.workers.dev/',iconUrl:'https://kinoko34077.github.io/standby-display/icon-192.png',glyph:'◷'}
-]);
+let apps=[CatalogRuntime.fixture],snapshot=null,refreshing=false,expiryTimer=null,lastRefresh=0;
 const home=document.querySelector('#home'),stage=document.querySelector('#stage'),surface=document.querySelector('#surface'),back=document.querySelector('#back');
 const menu=document.querySelector('#app-menu'),menuTitle=document.querySelector('#menu-title'),menuNote=document.querySelector('#menu-note');
 const openButton=document.querySelector('#menu-open'),shareButton=document.querySelector('#menu-share'),browserLink=document.querySelector('#menu-browser');
 const manualShare=document.querySelector('#manual-share'),shareUrl=document.querySelector('#share-url'),feedback=document.querySelector('#feedback');
 let sourceButton=null,selected=null,press=null,blockedClick=null,backdropPressed=false;
+function eligible(app){return apps.includes(app)&&Date.now()<app.expires;}
 function appUrl(app){return new URL(app.url,document.baseURI).href;}
 function launch(app,button){
-  if(!apps.includes(app))return;
+  if(!eligible(app)) { expireCatalog();return; }
+  if(!app.embed){showMenu(app,button);return;}
   sourceButton=button;
   const frame=document.createElement('iframe');
   frame.title=app.title;frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.src=appUrl(app);
@@ -22,15 +18,15 @@ function launch(app,button){
 function returnHome(){surface.replaceChildren();stage.hidden=true;home.hidden=false;sourceButton?.focus();sourceButton=null;}
 function clearPress(){if(press){clearTimeout(press.timer);press=null;}}
 function showMenu(app,button){
-  if(menu.open)return;
+  if(menu.open||!eligible(app))return;
   clearPress();selected={app,button};button.setAttribute('aria-expanded','true');
-  menuTitle.textContent=app.title;menuNote.textContent=app.note;browserLink.href=appUrl(app);
+  menuTitle.textContent=app.title;menuNote.textContent=app.note;browserLink.href=appUrl(app);openButton.hidden=!app.embed;
   manualShare.hidden=true;feedback.textContent='';backdropPressed=false;
   menu.showModal();
   const r=button.getBoundingClientRect(), m=menu.getBoundingClientRect(),w=window.innerWidth,h=window.innerHeight;
   menu.style.left=Math.max(12,Math.min(r.left+r.width/2-m.width/2,w-m.width-12))+'px';
   menu.style.top=Math.max(12,Math.min(r.bottom+m.height+8<=h-12?r.bottom+8:r.top-m.height-8,h-m.height-12))+'px';
-  openButton.focus();
+  (app.embed?openButton:browserLink).focus();
 }
 function closeMenu(restoreFocus=true){
   const old=selected;selected=null;
@@ -43,10 +39,10 @@ menu.addEventListener('close',()=>{if(!menu.open&&selected)closeMenu();});
 menu.addEventListener('pointerdown',e=>{backdropPressed=e.target===menu;});
 menu.addEventListener('click',e=>{if(e.target===menu&&backdropPressed)closeMenu();backdropPressed=false;});
 document.querySelector('#menu-cancel').addEventListener('click',()=>closeMenu());
-openButton.addEventListener('click',()=>{if(!selected)return;const {app,button}=selected;closeMenu(false);launch(app,button);});
-browserLink.addEventListener('click',()=>closeMenu());
+openButton.addEventListener('click',()=>{if(!selected||!eligible(selected.app))return;const {app,button}=selected;closeMenu(false);launch(app,button);});
+browserLink.addEventListener('click',e=>{if(!selected||!eligible(selected.app)){e.preventDefault();expireCatalog();return;}closeMenu();});
 shareButton.addEventListener('click',async()=>{
-  if(!selected)return;const current=selected,url=appUrl(current.app);
+  if(!selected||!eligible(selected.app)){expireCatalog();return;}const current=selected,url=appUrl(current.app);
   if(typeof navigator.share==='function'){
     try{await navigator.share({title:current.app.title,url});if(selected===current&&menu.open)closeMenu();return;}
     catch(e){if(e?.name==='AbortError')return;}
@@ -54,8 +50,10 @@ shareButton.addEventListener('click',async()=>{
   try{if(!navigator.clipboard?.writeText)throw new Error('unavailable');await navigator.clipboard.writeText(url);if(selected===current&&menu.open){closeMenu();feedback.textContent='リンクをコピーしました';}}
   catch{if(selected===current&&menu.open){manualShare.hidden=false;shareUrl.value=url;shareUrl.focus();shareUrl.select();}}
 });
+function renderApps(){
+  clearPress();blockedClick=null;document.querySelector('#apps').replaceChildren();
 for(const app of apps){
-  const button=document.createElement('button');button.type='button';button.className='tile';button.dataset.appId=app.id;
+  const button=document.createElement('button');button.type='button';button.className='tile';button.dataset.appId=app.id; if(app.alias)button.dataset.alias=app.alias;
   button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');button.setAttribute('aria-describedby','gesture-hint');
   const icon=document.createElement('span');icon.className='app-icon';icon.setAttribute('aria-hidden','true');
   const glyph=document.createElement('span');glyph.className='glyph';glyph.textContent=app.glyph;icon.append(glyph);
@@ -73,7 +71,25 @@ for(const app of apps){
   button.addEventListener('keydown',e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();showMenu(app,button);}});
   button.addEventListener('click',e=>{if(menu.open||(blockedClick===button&&e.detail!==0)){blockedClick=null;return;}launch(app,button);});
   document.querySelector('#apps').append(button);
+}}
+const catalogStatus=document.querySelector('#catalog-status');
+function expireCatalog(){
+  if(!snapshot||Date.now()<snapshot.expires)return;
+  closeMenu();snapshot=null;apps=[CatalogRuntime.fixture];renderApps();catalogStatus.textContent='公開カタログの期限切れ · 再取得待ち';
 }
+async function refreshCatalog(){
+  if(refreshing)return;refreshing=true;lastRefresh=Date.now();
+  try{
+    const next=await CatalogRuntime.read();
+    if(!next){expireCatalog();if(!snapshot)catalogStatus.textContent='公開カタログを取得できません';return;}
+    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[CatalogRuntime.fixture,...next.items];renderApps();}
+    const active=snapshot;const age=Date.now()-active.generated;
+    catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
+    clearTimeout(expiryTimer);expiryTimer=setTimeout(expireCatalog,Math.max(0,active.expires-Date.now()));
+  }finally{refreshing=false;}
+}
+renderApps();refreshCatalog();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){expireCatalog();if(Date.now()-lastRefresh>300000)refreshCatalog();}});
 document.addEventListener('pointermove',e=>{if(press&&press.id===e.pointerId&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>10)clearPress();},{passive:true});
 for(const name of ['pointerup','pointercancel'])document.addEventListener(name,e=>{if(press&&press.id===e.pointerId)clearPress();},{passive:true});
 window.addEventListener('blur',clearPress);window.addEventListener('scroll',clearPress,{passive:true});
