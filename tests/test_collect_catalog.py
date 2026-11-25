@@ -49,10 +49,36 @@ class CatalogTests(unittest.TestCase):
     def test_reject_private_wrong_owner_and_duplicates(self):
         for rows in ([dict(repo(),private=True)],[dict(repo(),visibility='private')],[dict(repo(),owner={'login':'other'})],[repo(),repo()]):
             with self.subTest(rows=rows),self.assertRaises(c.CatalogError):c.collect([],one_page(rows),lambda *_:None,NOW)
-    def test_unknown_and_archived_excluded(self):
+    def test_unknown_excluded_without_publication_evidence(self):
         data=c.collect([],one_page([repo(),repo(2,'archived')|{'archived':True},repo(3,'kinotch-hub'),repo(4,'not-pages',False)]),lambda *_:None,NOW)
         self.assertEqual(len(data['repositories']),4)
         self.assertEqual(data['applications'],[])
+    def test_non_pwa_and_archived_are_not_excluded(self):
+        base=c.PAGES+'/example/'
+        def meta(url,kind):
+            if url==base and kind=='html':
+                return b'<meta name="application-name" content="Ordinary app"><link rel="icon" href="favicon.svg">'
+            if url==base+'favicon.svg' and kind=='image':
+                return b'<svg/>'
+            return None
+        data=c.collect([],one_page([dict(repo(),archived=True)]),meta,NOW)
+        self.assertEqual(data['applications'][0]['title'],'Ordinary app')
+        self.assertEqual(data['applications'][0]['iconUrl'],base+'favicon.svg')
+        def browser_manifest(url,kind):
+            if kind=='html':return b'<link rel="manifest" href="manifest.json">'
+            if kind=='manifest':return b'{"name":"Browser app","start_url":"./","display":"browser"}'
+            return None
+        self.assertEqual(c.collect([],one_page([repo()]),browser_manifest,NOW)['applications'][0]['title'],'Browser app')
+        self.assertEqual(c.collect([],one_page([repo()]),lambda *_:b'<title>Documentation</title>',NOW)['applications'],[])
+    def test_curated_html_icon_and_archived(self):
+        base=c.PAGES+'/example/'
+        definitions=[{'repositoryId':'1','key':'main','title':'App','kind':'application','target':'pages','path':''}]
+        def get(url,kind):
+            if kind=='html':return b'<link rel="icon" href="favicon.svg">'
+            if url==base+'favicon.svg' and kind=='image':return b'<svg/>'
+            return None
+        data=c.collect(definitions,one_page([dict(repo(),archived=True)]),get,NOW)
+        self.assertEqual(data['applications'][0]['iconUrl'],base+'favicon.svg')
     def test_url_scope_and_untrusted_manifest(self):
         base=c.PAGES+'/example/'
         for u in ('https://evil.example/a','../other/','https://kinoko34077.github.io/other/','/example/%2e%2e/','https://user@kinoko34077.github.io/example/','/example/?token=x','/example/#x'):

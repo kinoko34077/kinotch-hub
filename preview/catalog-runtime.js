@@ -31,7 +31,7 @@ const CatalogRuntime=(()=>{
     const items=[];
     for(const a of data.applications){
       const r=a&&repos.get(a.repositoryId);
-      if(!r||r.archived||r.fullName.toLowerCase()===OWNER+'/kinotch-hub'||typeof a.id!=='string'||!/^repo:[1-9][0-9]*:[a-z0-9][a-z0-9-]*$/.test(a.id)||!a.id.startsWith('repo:'+r.id+':')||typeof a.title!=='string'||!a.title.trim()||a.title.length>100||!['application','preview','demo','documentation'].includes(a.kind)||!a.publication||time(a.publication.observedAt)>generated||ids.has(a.id)||urls.has(a.canonicalUrl))throw Error('invalid application');
+      if(!r||r.fullName.toLowerCase()===OWNER+'/kinotch-hub'||typeof a.id!=='string'||!/^repo:[1-9][0-9]*:[a-z0-9][a-z0-9-]*$/.test(a.id)||!a.id.startsWith('repo:'+r.id+':')||typeof a.title!=='string'||!a.title.trim()||a.title.length>100||!['application','preview','demo','documentation'].includes(a.kind)||!a.publication||time(a.publication.observedAt)>generated||ids.has(a.id)||urls.has(a.canonicalUrl))throw Error('invalid application');
       const root=PAGES+'/'+r.fullName.split('/')[1]+'/',worker=r.id==='969335914'&&a.canonicalUrl===WORKER;
       if(!(worker?a.publication.basis==='public-deployment':scoped(a.canonicalUrl,root)&&a.publication.basis==='github-pages'))throw Error('invalid app URL');
       if(a.iconUrl!==undefined&&!scoped(a.iconUrl,root))throw Error('invalid icon URL');
