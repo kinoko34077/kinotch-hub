@@ -38,7 +38,7 @@ try:
             page.route('**/tarot-draw/favicon.svg',lambda route:route.fulfill(status=200,content_type='image/svg+xml',body='<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>'))
             page.route('**/standby-display/icon-192.png',lambda route:route.abort())
             mock_catalog(page,catalog_fixture())
-            page.goto(base)
+            page.goto(base+'#fixture')
             expect(page.locator('#apps button')).to_have_count(5)
             assert page.locator('.app-icon').count()==5
             page.locator('[data-alias=tarot] img').wait_for(state='visible')
@@ -82,7 +82,7 @@ try:
             assert frame.locator('#draft').input_value()=='test'
             frame.locator('#check').click()
             assert json.loads(frame.locator('#result').inner_text())=={'storage':False,'parentAccess':False}
-            assert page.url==base
+            assert page.url==base+'#fixture'
             rect=page.locator('iframe').bounding_box()
             assert rect['width']==viewport['width'] and rect['height']==viewport['height'],rect
             page.locator('#back').click()
@@ -91,7 +91,7 @@ try:
                 page.locator(f'[data-alias={app_id}]').click()
                 assert page.locator('iframe').get_attribute('src')==url
                 assert page.locator('iframe').get_attribute('sandbox')=='allow-scripts'
-                assert page.url==base
+                assert page.url==base+'#fixture'
                 page.locator('#back').click()
             page.evaluate('navigator.serviceWorker.ready')
             page.reload()
@@ -106,8 +106,9 @@ try:
         page=context.new_page()
         page.route('https://**/*',lambda route:route.fulfill(status=200,body='<h1>Mock external candidate</h1>',content_type='text/html'))
         mock_catalog(page,catalog_fixture())
-        page.goto(base)
+        page.goto(base+'#fixture')
         tile=page.locator('[data-app-id=probe]')
+        tile.wait_for()
         rect=tile.bounding_box()
         x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
         session=context.new_cdp_session(page)
@@ -131,7 +132,7 @@ try:
         page.frame_locator('iframe').locator('#draft').wait_for()
         page.locator('#back').tap()
         context.close()
-        # New application arrives as data, not as code or embed permission.
+        # New application arrives as data, with no individual launch permission.
         ctx=browser.new_context()
         page=ctx.new_page()
         data=catalog_fixture()
@@ -142,9 +143,15 @@ try:
         page.goto(base)
         fresh=page.locator('[data-app-id="repo:99:main"]')
         fresh.click()
-        assert page.locator('#app-menu').is_visible()
-        assert not page.locator('#menu-open').is_visible()
-        assert page.locator('iframe').count()==0
+        assert not page.locator('#app-menu').is_visible()
+        expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/new-app/')
+        expect(page.locator('iframe')).to_have_attribute('sandbox','allow-scripts')
+        expect(page.locator('#stage-browser')).to_have_attribute('href','https://kinoko34077.github.io/new-app/')
+        page.locator('#stage-retry').click()
+        expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/new-app/')
+        page.locator('#back').click()
+        fresh.click(button='right')
+        expect(page.locator('#app-menu')).to_be_visible()
         page.locator('#menu-cancel').click()
         # Removal in a newer snapshot replaces cached state, never merges.
         page.unroute('**/catalog.json')
@@ -153,18 +160,24 @@ try:
         data['generatedAt']=t.isoformat().replace('+00:00','Z')
         mock_catalog(page,data)
         page.reload()
-        expect(page.locator('#apps button')).to_have_count(5)
+        expect(page.locator('#apps button')).to_have_count(4)
         assert fresh.count()==0
-        # Expired cached/network snapshot cannot start an application.
+        # Stale catalog retains usable links; known removals do not return.
         page.unroute('**/catalog.json')
         expired=datetime.now(timezone.utc)-timedelta(days=4)
         data['generatedAt']=expired.replace(microsecond=0).isoformat().replace('+00:00','Z')
+        for item in data['repositories']:item['observedAt']=data['generatedAt']
+        for item in data['applications']:item['publication']['observedAt']=data['generatedAt']
         data['validUntil']=(expired+timedelta(days=3)).replace(microsecond=0).isoformat().replace('+00:00','Z')
         page.evaluate("(data)=>localStorage.setItem('kinotch-hub.catalog.v1',JSON.stringify(data))",data)
         mock_catalog(page,data)
         page.reload()
-        expect(page.locator('#catalog-status')).to_contain_text('取得できません')
-        expect(page.locator('#apps button')).to_have_count(1)
+        expect(page.locator('#catalog-status')).to_contain_text('更新遅延')
+        expect(page.locator('#apps button')).to_have_count(4)
+        page.locator('[data-alias=tarot]').click()
+        expect(page.locator('iframe')).to_have_attribute('src','https://kinoko34077.github.io/tarot-draw/')
+        page.locator('#back').click()
+        assert fresh.count()==0
         ctx.close()
         # Real generated artifact (not the fixture) must be admitted by the
         # actual launcher. Mock only off-origin images, never catalog.json.
@@ -174,7 +187,7 @@ try:
         real=json.loads((ROOT/'preview/catalog.json').read_text(encoding='utf-8'))
         page.goto(base)
         expect(page.locator('#catalog-status')).to_contain_text('更新 ')
-        expect(page.locator('#apps button')).to_have_count(1+sum(a['kind']!='documentation' for a in real['applications']))
+        expect(page.locator('#apps button')).to_have_count(sum(a['kind']!='documentation' for a in real['applications']))
         for item in real['applications']:
             if item['kind']!='documentation':
                 expect(page.locator('[data-app-id="'+item['id']+'"]')).to_have_count(1)
@@ -186,7 +199,7 @@ try:
         }""")
         ctx.close()
         browser.close()
-    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, allowlisted routing (mocked), manifest, offline shell')
+    print('PASS: icon grid, context menu, native share mock, clipboard fallback, manual copy, keyboard, touch long press/scroll/tap, 2 viewports, input, isolation, return, data-driven routing (mocked), stale links retained, stage fallback, manifest, offline shell')
 finally:
     server.shutdown()
     server.server_close()
