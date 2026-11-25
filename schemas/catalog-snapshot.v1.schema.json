@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kinoko34077/kinotch-hub/schemas/catalog-snapshot.v1.schema.json",
+  "title": "Public catalog snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "validUntil",
+    "repositories",
+    "applications"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/repository"
+      }
+    },
+    "applications": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/application"
+      }
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fullName",
+        "visibility",
+        "archived",
+        "observedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "fullName": {
+          "type": "string",
+          "pattern": "^kinoko34077/[A-Za-z0-9._-]+$"
+        },
+        "visibility": {
+          "const": "public"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repositoryId",
+        "title",
+        "kind",
+        "canonicalUrl",
+        "publication"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(repo:[1-9][0-9]*:[a-z0-9][a-z0-9-]*|site:[a-z0-9][a-z0-9-]*)$"
+        },
+        "repositoryId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "application",
+            "demo",
+            "preview",
+            "documentation"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "canonicalUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "publication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "observedAt"
+          ],
+          "properties": {
+            "basis": {
+              "enum": [
+                "github-pages",
+                "public-homepage",
+                "public-deployment",
+                "owner-confirmed-public-site"
+              ]
+            },
+            "observedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "iconUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "repositoryId": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {
+                "pattern": "^site:"
+              },
+              "publication": {
+                "properties": {
+                  "basis": {
+                    "const": "owner-confirmed-public-site"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "id": {
+                "pattern": "^repo:"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
