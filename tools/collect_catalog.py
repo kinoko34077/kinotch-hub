@@ -44,7 +44,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def request(url, accept):
+def request(url, accept, *, missing_codes=(404, 410)):
     # Only callers with fixed API paths or validated publication URLs enter.
     try:
         with build_opener(NoRedirect()).open(
@@ -58,7 +58,7 @@ def request(url, accept):
                 raise ProbeUnavailable('RESPONSE_LIMIT')
             return body, response.headers.get_content_type(), response.headers.get('Link', '')
     except HTTPError as error:
-        if error.code in (301, 302, 303, 307, 308, 404, 410):
+        if error.code in missing_codes:
             error.close()
             return None
         error.close()
@@ -139,12 +139,12 @@ def safe_url(value, base, relative_to=None):
 
 def probe(url, kind):
     result = request(url, {'html': 'text/html', 'manifest': 'application/manifest+json, application/json',
-                           'image': 'image/*'}[kind])
+                           'image': 'image/*'}[kind], missing_codes=(410,))
     if result is None:
         return None
     body, media_type, _ = result
     if kind == 'html' and media_type not in ('text/html', 'application/xhtml+xml'):
-        return None
+        raise ProbeUnavailable('UNEXPECTED_HTML_MEDIA_TYPE')
     if kind == 'manifest' and media_type not in ('application/manifest+json', 'application/json'):
         return None
     if kind == 'image' and media_type not in ('image/png', 'image/svg+xml', 'image/jpeg', 'image/webp', 'image/x-icon', 'image/vnd.microsoft.icon'):
@@ -215,7 +215,7 @@ def manifest_app(base, html, get):
     return app
 
 
-def curated_app(definition, base, has_pages, get):
+def curated_url(definition, base, has_pages):
     target = definition.get('target')
     if target == 'pages':
         if not has_pages:
@@ -225,6 +225,12 @@ def curated_app(definition, base, has_pages, get):
         url = WORKER + '/'
     else:
         raise CatalogError('INVALID_CURATED_TARGET')
+    if not url:
+        raise CatalogError('INVALID_CURATED_TARGET')
+    return url
+
+
+def curated_app(definition, base, url, get):
     title, kind = title_text(definition.get('title')), definition.get('kind')
     if not url or not title or kind not in ('application', 'demo', 'preview', 'documentation'):
         raise CatalogError('INVALID_CURATED_APP')
@@ -241,18 +247,26 @@ def curated_app(definition, base, has_pages, get):
     return app
 
 
-def discover(repos, definitions, observed, get):
-    # A fully observed public list is authoritative for removals. Unknown
-    # app publication is omitted, not renewed from a previous snapshot.
-    failed_probes = 0
-    original_get = get
-    def get(url, kind):
-        nonlocal failed_probes
-        try:
-            return original_get(url, kind)
-        except ProbeUnavailable:
-            failed_probes += 1
-            return None
+def discover(repos, definitions, observed, get, previous=None):
+    # The complete current public repository list controls eligibility.
+    # A transient probe error must not revoke a previously confirmed URL.
+    old_by_id = {a['id']: a for a in (previous or {}).get('applications', [])}
+    retained = 0
+
+    def retain(ident, repo, url, basis):
+        nonlocal retained
+        old = old_by_id.get(ident)
+        if (old is not None and old['repositoryId'] == repo['id']
+                and old['canonicalUrl'] == url and old['publication']['basis'] == basis):
+            retained += 1
+            # Preserve the original observation, never claim a new confirmation.
+            return old
+        return None
+
+    def confirmed(app, ident, repo, basis):
+        return dict(app, id=ident, repositoryId=repo['id'],
+                    publication={'basis': basis, 'observedAt': observed})
+
     by_id, seen_keys = {}, set()
     for entry in definitions:
         if not isinstance(entry, dict) or not isinstance(entry.get('repositoryId'), str):
@@ -271,22 +285,35 @@ def discover(repos, definitions, observed, get):
         entries = by_id.get(repo['id'], [])
         if entries:
             for entry in entries:
-                app = curated_app(entry, base, has_pages, get)
+                url = curated_url(entry, base, has_pages)
+                if url is None:
+                    continue
+                ident = 'repo:' + repo['id'] + ':' + entry['key']
+                basis = 'github-pages' if entry['target'] == 'pages' else 'public-deployment'
+                try:
+                    app = curated_app(entry, base, url, get)
+                    app = confirmed(app, ident, repo, basis) if app else None
+                except ProbeUnavailable:
+                    app = retain(ident, repo, url, basis)
                 if app:
-                    apps.append(dict(app, id='repo:' + repo['id'] + ':' + entry['key'],
-                                     repositoryId=repo['id'], publication={
-                                         'basis': 'github-pages' if entry['target'] == 'pages' else 'public-deployment',
-                                         'observedAt': observed}))
+                    apps.append(app)
         elif has_pages:
-            html = get(base, 'html')
-            if html is not None:
-                app = manifest_app(base, html, get)
+            ident, basis = 'repo:' + repo['id'] + ':main', 'github-pages'
+            try:
+                html = get(base, 'html')
+                app = manifest_app(base, html, get) if html is not None else None
                 if app:
-                    apps.append(dict(app, id='repo:' + repo['id'] + ':main',
-                                     repositoryId=repo['id'], publication={
-                                         'basis': 'github-pages', 'observedAt': observed}))
-    if failed_probes:
-        print('Temporarily unavailable publication probes=' + str(failed_probes))
+                    app = confirmed(app, ident, repo, basis)
+                elif html is not None:
+                    # A reachable HTML page losing manifest evidence is not
+                    # positive evidence of withdrawal of its former app.
+                    app = retain(ident, repo, base, basis)
+            except ProbeUnavailable:
+                app = retain(ident, repo, base, basis)
+            if app:
+                apps.append(app)
+    if retained:
+        print('Retained last confirmed applications=' + str(retained))
     return apps
 
 
@@ -326,12 +353,14 @@ def validate_snapshot(data):
         urls.add(url)
 
 
-def collect(definitions, get_page=get_api_page, get=probe, now=None):
+def collect(definitions, get_page=get_api_page, get=probe, now=None, previous=None):
+    if previous is not None:
+        validate_snapshot(previous)
     now = now or datetime.now(timezone.utc)
     observed = stamp(now)
     rows = read_linked_rows(repository_path, get_page, per_page=PER_PAGE, max_pages=MAX_PAGES)
     repos = normalize_repositories(rows, observed)
-    apps = discover(repos, definitions, observed, get)
+    apps = discover(repos, definitions, observed, get, previous)
     # The generation clock is after observations in live mode.
     generated = max(now, datetime.now(timezone.utc)) if get_page is get_api_page else now
     data = {'schemaVersion': 1, 'generatedAt': stamp(generated),
@@ -359,13 +388,30 @@ def write_atomic(path, data):
         temporary.unlink(missing_ok=True)
 
 
+def read_previous():
+    # The existing public deployment is the last-good source; no new store,
+    # credentials, arbitrary fetch or write-back mechanism.
+    result = request(PAGES + '/kinotch-hub/catalog.json', 'application/json')
+    if result is None:
+        return None
+    body, media_type, _ = result
+    if media_type != 'application/json':
+        raise CatalogError('INVALID_PREVIOUS_MEDIA_TYPE')
+    try:
+        previous = json.loads(body)
+    except (ValueError, UnicodeError):
+        raise CatalogError('INVALID_PREVIOUS_JSON') from None
+    validate_snapshot(previous)
+    return previous
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     try:
         definitions = json.loads((ROOT / 'catalog/public-apps.json').read_text(encoding='utf-8'))
-        data = collect(definitions)
+        data = collect(definitions, previous=read_previous())
         write_atomic(args.output, data)
     except (CatalogError, MappedReadError):
         parser.exit(1, 'Public catalog collection incomplete or invalid; no new snapshot written.\n')
