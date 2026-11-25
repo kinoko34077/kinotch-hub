@@ -1,0 +1,32 @@
+name: R0 browser probe
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'spikes/r0_frame_probe.py'
+      - 'spikes/r0_public_continuity_probe.py'
+      - '.github/workflows/r0-browser-probe.yml'
+permissions: {}
+jobs:
+  browser-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install pinned browser test package
+        run: python -m pip install 'playwright==1.65.2'
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run isolated loopback browser fixture
+        run: python spikes/r0_frame_probe.py
+
+      - name: Observe public representative storage continuity
+        run: python spikes/r0_public_continuity_probe.py
