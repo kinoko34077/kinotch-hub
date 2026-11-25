@@ -16,9 +16,17 @@ try:
         for viewport in ({'width':390,'height':844},{'width':844,'height':390}):
             page = browser.new_page(viewport=viewport)
             page.route('https://**/*',lambda route:route.fulfill(status=200,body='<h1>Mock external candidate</h1>',content_type='text/html'))
+            page.route('**/tarot-draw/favicon.svg',lambda route:route.fulfill(status=200,content_type='image/svg+xml',body='<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>'))
+            page.route('**/standby-display/icon-192.png',lambda route:route.abort())
             page.goto(base)
             assert page.locator('#apps button').count()==5
             assert page.locator('.app-icon').count()==5
+            page.locator('[data-app-id=tarot] img').wait_for(state='visible')
+            assert page.locator('[data-app-id=tarot] img').evaluate('img=>img.naturalWidth')==32
+            assert not page.locator('[data-app-id=tarot] .glyph').is_visible()
+            page.wait_for_function("document.querySelector('[data-app-id=clock] img').complete")
+            assert page.locator('[data-app-id=clock] .glyph').is_visible()
+            assert not page.locator('[data-app-id=clock] img').is_visible()
             if viewport['width']==390:
                 assert page.locator('#apps').evaluate("el=>getComputedStyle(el).gridTemplateColumns.split(' ').length")==4
             tile=page.locator('[data-app-id=tarot]')
