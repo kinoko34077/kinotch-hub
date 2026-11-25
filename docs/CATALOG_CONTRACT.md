@@ -1,7 +1,7 @@
-# KiNoTch. Hub — 公開カタログ・状態契約 v1（R1 草案）
+# KiNoTch. Hub — 公開カタログ・状態契約 v1
 
 Owner: #4。上位要件: #1。ロードマップ: #2。
-状態: 方式非依存部分の設計草案。R0の合成試験は成立したが、実サイト・iOS実機の受入は未完。起動方式の確定と本番公開を意味しない。
+状態: R1の方式非依存データ契約（起動方式は検証中）。R0の合成試験は成立したが、実サイト・iOS実機の受入は未完。起動方式の確定と本番公開を意味しない。
 
 ## 1. 目的と責務
 
@@ -22,7 +22,7 @@ Site Kitの公開検索・site lifecycle等と意味が一致する部分は既�
 | データ | 所有者・寿命 | 不変条件 |
 |---|---|---|
 | Repository | 収集器 / snapshot | GitHub numeric repository IDを文字列として保持。repo改名でIDを変えない。ownerはkinoko34077、公開と確認済みのものだけ。 |
-| Application | 公開台帳 / snapshot | repoに0..Nアプリ。app keyは同一アプリのURL移動で変えない。repoに属する場合は repo:<repoId>:<key>、独立公開サイトは site:<key>。独立サイトは公開所有根拠を明示し、Private repoの代替掲載には使わない。 |
+| Application | 公開台帳 / snapshot | repoに0..Nアプリ。任意のiconUrlは既存公開アイコンの確認済みHTTPS URLであり、存在しない/取得失敗時は代替表示する。app keyは同一アプリのURL移動で変えない。repoに属する場合は repo:<repoId>:<key>、独立公開サイトは site:<key>。独立サイトは公開所有根拠を明示し、Private repoの代替掲載には使わない。 |
 | CatalogSnapshot | 収集器→Hub / 更新単位 | schema version、生成時刻、最終有効時刻、完全な公開repo集合と確認済みアプリ。原子的に切り替える。 |
 | LaunchPolicy | Hub管理者 / 版付き | app ID・確認済みcanonical URL・起動方式・許可能力・検証証拠の対応。外部収集結果と分離。未登録・URL変更・証拠失効時は内部起動不可。 |
 | UserPreference | 端末 / 永続 | app ID単位のfavorite/order、最近使用、検索・表示・テーマ設定。名前・URLはcatalogから解決。消えたIDは起動させない。個人データを配信しない。 |
@@ -58,4 +58,4 @@ Catalogのapp配列には所有・公開URLの確認を満たすアプリのみ�
 | HUB-11 | #5/#8/#10 | 無料運用、CI/配信コストと外部依存を確認 |
 | HUB-12 | #9/#10 | 既存URLと独立PWAの動作に影響なし、既存repo改変なし |
 
-R1の方式非依存部分はR0と並行可能。起動方式の選択・権限とR1全体の受入は未完。R6では実機試験、R7では公開前後の実URL検証と明示公開承認を別々に扱う。
+R1の方式非依存部分はR0と並行可能。起動方式の選択・権限とR1全体の受入は未完。R6では実機試験、R7では公開前後の実URL検証と初回/新規公開承認を別々に扱う。既存公開先への通常更新はdevflow #760の承認範囲で行う。

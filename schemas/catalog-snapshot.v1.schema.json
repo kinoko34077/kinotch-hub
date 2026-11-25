@@ -142,6 +142,11 @@
               "format": "date-time"
             }
           }
+        },
+        "iconUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
         }
       },
       "allOf": [
