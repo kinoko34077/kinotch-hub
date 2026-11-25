@@ -32,7 +32,3 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/.shared/devflow
         run: python -m unittest discover -s tests -v
-      - name: Live anonymous public catalog (no publication)
-        env:
-          PYTHONPATH: ${{ github.workspace }}/.shared/devflow
-        run: python tools/collect_catalog.py --output "$RUNNER_TEMP/catalog.json"

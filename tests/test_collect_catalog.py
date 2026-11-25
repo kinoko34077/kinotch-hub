@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from devflow_mapped_read import MappedReadError
 from tools import collect_catalog as c
 
@@ -100,6 +101,64 @@ class CatalogTests(unittest.TestCase):
         new=c.collect([],one_page([repo(2,'other'),repo(3,'still')]),unavailable,NOW)
         self.assertEqual([a['id'] for a in new['applications']],['repo:3:main'])
         self.assertNotIn('repo:1:main',json.dumps(new))
+    def test_transient_failure_retains_only_current_public_app(self):
+        old=c.collect([],one_page([repo(),repo(2,'removed'),repo(3,'disabled')]),lambda url,kind: next((v for name in ('example','removed','disabled') if (v:=app_get(c.PAGES+'/'+name+'/')(url,kind)) is not None),None),NOW)
+        self.assertEqual(len(old['applications']),3)
+        def unavailable(url,kind):
+            raise c.ProbeUnavailable('NETWORK')
+        later=NOW+c.timedelta(days=5)
+        new=c.collect([],one_page([repo(),repo(3,'disabled',False)]),unavailable,later,previous=old)
+        self.assertEqual([a['id'] for a in new['applications']],['repo:1:main'])
+        self.assertEqual(new['applications'][0],old['applications'][0])
+        self.assertNotEqual(new['generatedAt'],old['generatedAt'])
+        moved=c.collect([],one_page([repo(name='renamed')]),unavailable,later,previous=old)
+        self.assertEqual(moved['applications'],[])
+        gone=c.collect([],one_page([repo()]),lambda *_:None,later,previous=old)
+        self.assertEqual(gone['applications'],[])
+        non_pwa=c.collect([],one_page([repo()]),lambda url,kind:b'<html><title>App</title></html>' if kind=='html' else None,later,previous=old)
+        self.assertEqual(non_pwa['applications'],[old['applications'][0]])
+    def test_curated_failure_is_local_and_does_not_renew_observation(self):
+        defs=[{'repositoryId':'1','key':'main','title':'App','kind':'application','target':'pages','path':''},{'repositoryId':'1','key':'demo','title':'Demo','kind':'demo','target':'pages','path':'demo/'}]
+        old=c.collect(defs,one_page([repo()]),lambda *_:b'html',NOW)
+        def partial(url,kind):
+            if url.endswith('/demo/'):
+                raise c.ProbeUnavailable('NETWORK')
+            return b'html'
+        new=c.collect(defs,one_page([repo()]),partial,NOW+c.timedelta(days=1),previous=old)
+        self.assertEqual(len(new['applications']),2)
+        byid={a['id']:a for a in new['applications']}
+        self.assertEqual(byid['repo:1:demo']['publication']['observedAt'],old['generatedAt'])
+        self.assertEqual(byid['repo:1:main']['publication']['observedAt'],new['generatedAt'])
+        new=c.collect(defs[:1],one_page([repo()]),partial,NOW+c.timedelta(days=1),previous=old)
+        self.assertEqual([a['id'] for a in new['applications']],['repo:1:main'])
+    def test_list_failure_preserves_exact_old_snapshot_and_rejects_private(self):
+        old=c.collect([],one_page([repo()]),app_get(c.PAGES+'/example/'),NOW)
+        def unavailable(path):
+            raise c.ProbeUnavailable('UPSTREAM_HTTP_403')
+        data,fallback=c.collect_with_recovery([],old,True,unavailable,lambda *_:None,NOW+c.timedelta(days=5))
+        self.assertTrue(fallback)
+        self.assertEqual(data,old)
+        with self.assertRaises(c.ProbeUnavailable):
+            c.collect_with_recovery([],old,False,unavailable)
+        with self.assertRaises(c.ProbeUnavailable):
+            c.collect_with_recovery([],None,True,unavailable)
+        with self.assertRaises(c.CatalogError):
+            c.collect_with_recovery([],old,True,one_page([dict(repo(),private=True)]))
+    def test_api_auth_only_for_fixed_public_list(self):
+        with patch.dict(c.os.environ,{'GITHUB_TOKEN':'fixture-token'}):
+            with patch.object(c,'build_opener') as builder:
+                opener=builder.return_value
+                response=opener.open.return_value.__enter__.return_value
+                response.status=200
+                response.read.return_value=b'[]'
+                response.headers.get_content_type.return_value='application/json'
+                response.headers.get.return_value=''
+                c.get_api_page(c.repository_path(1))
+                self.assertEqual(opener.open.call_args.args[0].get_header('Authorization'),'Bearer fixture-token')
+                c.request(c.PAGES+'/kinotch-hub/catalog.json','application/json')
+                self.assertIsNone(opener.open.call_args.args[0].get_header('Authorization'))
+                with self.assertRaises(c.CatalogError):
+                    c.request('https://example.com/','application/json',api_auth=True)
     def test_semantic_validation_and_atomic_write(self):
         base=c.PAGES+'/example/'
         valid=c.collect([],one_page([repo()]),app_get(base),NOW)
