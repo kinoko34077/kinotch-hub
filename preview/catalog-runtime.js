@@ -1,7 +1,8 @@
 'use strict';
 // Hub catalog admission. Public URL validation is independent of launch compatibility.
 const CatalogRuntime=(()=>{
-  const DAY=86400000, OWNER='kinoko34077', PAGES='https://kinoko34077.github.io', WORKER='https://standby-display.kinotch.workers.dev/';
+  const DAY=86400000, OWNER='kinoko34077', PAGES='https://kinoko34077.github.io';
+  const EXTERNAL_URLS=Object.freeze(["https://standby-display.kinotch.workers.dev/"]); // generated: publication-network
   const key='kinotch-hub.catalog.v1';
   // Cosmetic fallback metadata only; never an admission or launch policy.
   const appearance=Object.freeze({
@@ -32,8 +33,8 @@ const CatalogRuntime=(()=>{
     for(const a of data.applications){
       const r=a&&repos.get(a.repositoryId);
       if(!r||r.fullName.toLowerCase()===OWNER+'/kinotch-hub'||typeof a.id!=='string'||!/^repo:[1-9][0-9]*:[a-z0-9][a-z0-9-]*$/.test(a.id)||!a.id.startsWith('repo:'+r.id+':')||typeof a.title!=='string'||!a.title.trim()||a.title.length>100||!['application','preview','demo','documentation'].includes(a.kind)||!a.publication||time(a.publication.observedAt)>generated||ids.has(a.id)||urls.has(a.canonicalUrl))throw Error('invalid application');
-      const root=PAGES+'/'+r.fullName.split('/')[1]+'/',worker=r.id==='969335914'&&a.canonicalUrl===WORKER;
-      if(!(worker?a.publication.basis==='public-deployment':scoped(a.canonicalUrl,root)&&a.publication.basis==='github-pages'))throw Error('invalid app URL');
+      const root=PAGES+'/'+r.fullName.split('/')[1]+'/',external=EXTERNAL_URLS.includes(a.canonicalUrl);
+      if(!((external&&a.publication.basis==='public-deployment')||(scoped(a.canonicalUrl,root)&&a.publication.basis==='github-pages')))throw Error('invalid app URL');
       if(a.iconUrl!==undefined&&!scoped(a.iconUrl,root))throw Error('invalid icon URL');
       ids.add(a.id);urls.add(a.canonicalUrl);
       if(a.kind==='documentation')continue;
