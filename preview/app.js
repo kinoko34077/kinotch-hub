@@ -7,7 +7,8 @@ const menu=document.querySelector('#app-menu'),menuTitle=document.querySelector(
 const openButton=document.querySelector('#menu-open'),shareButton=document.querySelector('#menu-share'),browserLink=document.querySelector('#menu-browser');
 const manualShare=document.querySelector('#manual-share'),shareUrl=document.querySelector('#share-url'),feedback=document.querySelector('#feedback');
 let sourceButton=null,selected=null,press=null,blockedClick=null,backdropPressed=false;
-function eligible(app){return apps.includes(app);}
+function currentApp(app){return app&&apps.find(a=>a.id===app.id&&a.url===app.url);}
+function eligible(app){return !!currentApp(app);}
 const external=document.querySelector('#stage-browser'),retry=document.querySelector('#stage-retry');
 function loadFrame(app){
   const frame=document.createElement('iframe');
@@ -16,7 +17,7 @@ function loadFrame(app){
 }
 function appUrl(app){return new URL(app.url,document.baseURI).href;}
 function launch(app,button){
-  if(!eligible(app))return;
+  app=currentApp(app);if(!app)return;
   sourceButton=button;activeApp=app;
   external.href=appUrl(app);external.hidden=app.id==='probe';retry.hidden=app.id==='probe';
   loadFrame(app);home.hidden=true;stage.hidden=false;back.focus();
@@ -26,7 +27,7 @@ retry.addEventListener('click',()=>{if(activeApp&&apps.some(a=>a.id===activeApp.
 external.addEventListener('click',e=>{if(!activeApp||!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url))e.preventDefault();});
 function clearPress(){if(press){clearTimeout(press.timer);press=null;}}
 function showMenu(app,button){
-  if(menu.open||!eligible(app))return;
+  app=currentApp(app);if(menu.open||!app)return;
   clearPress();selected={app,button};button.setAttribute('aria-expanded','true');
   menuTitle.textContent=app.title;menuNote.textContent=app.note;browserLink.href=appUrl(app);openButton.hidden=false;
   manualShare.hidden=true;feedback.textContent='';backdropPressed=false;
@@ -58,9 +59,10 @@ shareButton.addEventListener('click',async()=>{
   try{if(!navigator.clipboard?.writeText)throw new Error('unavailable');await navigator.clipboard.writeText(url);if(selected===current&&menu.open){closeMenu();feedback.textContent='リンクをコピーしました';}}
   catch{if(selected===current&&menu.open){manualShare.hidden=false;shareUrl.value=url;shareUrl.focus();shareUrl.select();}}
 });
-function renderApps(){
-  clearPress();blockedClick=null;document.querySelector('#apps').replaceChildren();
-for(const app of apps){
+const appList=document.querySelector('#apps');
+let renderedTiles=new Map();
+function sameAppearance(a,b){return a.url===b.url&&a.title===b.title&&a.iconUrl===b.iconUrl&&a.glyph===b.glyph&&a.alias===b.alias;}
+function createTile(app){
   const button=document.createElement('button');button.type='button';button.className='tile';button.dataset.appId=app.id; if(app.alias)button.dataset.alias=app.alias;
   button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');button.setAttribute('aria-describedby','gesture-hint');
   const icon=document.createElement('span');icon.className='app-icon';icon.setAttribute('aria-hidden','true');
@@ -78,13 +80,46 @@ for(const app of apps){
   button.addEventListener('contextmenu',e=>{e.preventDefault();clearPress();blockedClick=button;showMenu(app,button);});
   button.addEventListener('keydown',e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();showMenu(app,button);}});
   button.addEventListener('click',e=>{if(menu.open||(blockedClick===button&&e.detail!==0)){blockedClick=null;return;}launch(app,button);});
-  document.querySelector('#apps').append(button);
-}}
+  return button;
+}
+function renderApps(){
+  const focused=document.activeElement?.dataset?.appId;
+  const previous=renderedTiles,next=new Map(),desired=[];
+  for(const app of apps){
+    const old=previous.get(app.id),button=old&&sameAppearance(old.app,app)?old.button:createTile(app);
+    next.set(app.id,{app,button});desired.push(button);
+  }
+  const changed=appList.children.length!==desired.length||desired.some((button,i)=>appList.children[i]!==button);
+  if(changed){
+    // A changing grid must not complete a gesture against a moved/replaced tile.
+    if(press){blockedClick=press.button;clearPress();}
+    for(const {button} of previous.values())if(!desired.includes(button))button.remove();
+    for(let i=0;i<desired.length;i++)if(appList.children[i]!==desired[i])appList.insertBefore(desired[i],appList.children[i]||null);
+  }
+  renderedTiles=next;
+  if(selected){
+    const app=currentApp(selected.app);
+    if(!app){closeMenu(false);if(!home.hidden)(desired[0]||document.querySelector('#catalog-retry')).focus();}
+    else{
+      selected.button.setAttribute('aria-expanded','false');
+      selected.app=app;selected.button=next.get(app.id).button;selected.button.setAttribute('aria-expanded','true');
+      menuTitle.textContent=app.title;menuNote.textContent=app.note;
+    }
+  }
+  if(changed&&focused&&!menu.open&&!home.hidden){
+    const old=previous.get(focused),replacement=next.get(focused);
+    if(old&&replacement&&old.app.url===replacement.app.url)replacement.button.focus({preventScroll:true});
+    else if(document.activeElement===document.body)desired[0]?.focus({preventScroll:true});
+  }
+}
 const catalogStatus=document.querySelector('#catalog-status');
 function renderRepositories(data){
   const panel=document.querySelector('#repo-panel'),list=document.querySelector('#repo-list'),label=document.querySelector('#repo-summary');
   const rows=[...data.repositories].sort((a,b)=>a.fullName.localeCompare(b.fullName,'ja'));
   const focused=document.activeElement?.dataset?.repoId;
+  const signature=JSON.stringify(rows.map(r=>[r.id,r.fullName]));
+  if(list.dataset.signature===signature)return;
+  list.dataset.signature=signature;
   const fragment=document.createDocumentFragment();
   for(const repo of rows){
     const li=document.createElement('li'),link=document.createElement('a');
@@ -101,10 +136,10 @@ async function refreshCatalog(){
     const next=await CatalogRuntime.read();
     if(!next){catalogStatus.textContent=snapshot?'取得失敗 · 保存済み一覧 · 更新 '+new Date(snapshot.generated).toLocaleString('ja-JP'):'公開カタログを取得できません';document.querySelector('#catalog-retry').hidden=false;return;}
     document.querySelector('#catalog-retry').hidden=next.source!=='cached';
-    if(!snapshot||next.generated>snapshot.generated){closeMenu();snapshot=next;apps=[...initialApps(),...next.items];renderApps();renderRepositories(next.data);}
+    if(!snapshot||next.generated>snapshot.generated){snapshot=next;apps=[...initialApps(),...next.items];renderApps();renderRepositories(next.data);}
     const active=snapshot;const age=Date.now()-active.generated;
     catalogStatus.textContent=(next.source==='cached'?'保存済み一覧 · ':'')+(Date.now()>=active.expires||age>30*3600000?'更新遅延 · ':'')+'更新 '+new Date(active.generated).toLocaleString('ja-JP')+' · '+active.items.length+'件';
-    if(activeApp&&!apps.some(a=>a.id===activeApp.id&&a.url===activeApp.url)){external.hidden=true;retry.hidden=true;}
+    if(activeApp){const available=!!currentApp(activeApp)&&activeApp.id!=='probe';external.hidden=!available;retry.hidden=!available;}
   }finally{refreshing=false;}
 }
 renderApps();refreshCatalog();
