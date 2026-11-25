@@ -38,7 +38,7 @@ try:
             page.route('**/tarot-draw/favicon.svg',lambda route:route.fulfill(status=200,content_type='image/svg+xml',body='<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="red"/></svg>'))
             page.route('**/standby-display/icon-192.png',lambda route:route.abort())
             mock_catalog(page,catalog_fixture())
-        page.goto(base)
+            page.goto(base)
             expect(page.locator('#apps button')).to_have_count(5)
             assert page.locator('.app-icon').count()==5
             page.locator('[data-alias=tarot] img').wait_for(state='visible')
@@ -106,7 +106,7 @@ try:
         page=context.new_page()
         page.route('https://**/*',lambda route:route.fulfill(status=200,body='<h1>Mock external candidate</h1>',content_type='text/html'))
         mock_catalog(page,catalog_fixture())
-            page.goto(base)
+        page.goto(base)
         tile=page.locator('[data-app-id=probe]')
         rect=tile.bounding_box()
         x,y=rect['x']+rect['width']/2,rect['y']+rect['height']/2
