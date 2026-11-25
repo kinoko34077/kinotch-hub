@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'spikes/r0_frame_probe.py'
+      - 'spikes/r0_public_continuity_probe.py'
       - '.github/workflows/r0-browser-probe.yml'
 permissions: {}
 jobs:
@@ -26,3 +27,6 @@ jobs:
         run: python -m playwright install --with-deps chromium
       - name: Run isolated loopback browser fixture
         run: python spikes/r0_frame_probe.py
+
+      - name: Observe public representative storage continuity
+        run: python spikes/r0_public_continuity_probe.py
